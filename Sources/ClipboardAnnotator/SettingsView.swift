@@ -4,18 +4,21 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var settings: AppSettings
     @State private var trusted = PermissionCheck.isTrusted
+    @State private var microphoneAuthorized = PermissionCheck.isMicrophoneAuthorized
+    @State private var voiceModelState: VoiceModelState = .checking
 
     var body: some View {
         Form {
             Section {
                 shortcutRow("Capture selection", combo: $settings.captureCombo)
+                shortcutRow("Hold to make a voice annotation", combo: $settings.voiceCaptureCombo)
                 shortcutRow("Copy all as Markdown", combo: $settings.copyCombo)
                 shortcutRow("Show stack", combo: $settings.stackCombo)
                 shortcutRow("Clear the stack", combo: $settings.clearCombo)
             } header: {
                 Text("Shortcuts")
             } footer: {
-                Text("Clearing is undoable — use Undo Clear in the menu bar, or ⌘Z in the stack window.")
+                Text("Hold the voice shortcut while you speak. Release it to transcribe and save. Clearing is undoable — use Undo Clear in the menu bar, or ⌘Z in the stack window.")
             }
 
             Section {
@@ -48,10 +51,26 @@ struct SettingsView: View {
                             .controlSize(.small)
                     }
                 }
+                LabeledContent("Microphone") {
+                    HStack(spacing: 10) {
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(microphoneAuthorized ? Color.green : Color.orange)
+                                .frame(width: 8, height: 8)
+                            Text(microphoneAuthorized ? "Granted" : "Not granted")
+                                .foregroundStyle(microphoneAuthorized ? .primary : .secondary)
+                        }
+                        Button("Open System Settings…") { PermissionCheck.openMicrophoneSettings() }
+                            .controlSize(.small)
+                    }
+                }
+                LabeledContent("Local voice model") {
+                    voiceModelControl
+                }
             } header: {
                 Text("Permissions")
             } footer: {
-                Text("Needed to read the text you have highlighted in other apps.")
+                Text("Accessibility reads selected text. The microphone is only used while you hold the voice shortcut. The voice model stays on this Mac.")
             }
         }
         .formStyle(.grouped)
@@ -59,7 +78,9 @@ struct SettingsView: View {
         .fixedSize(horizontal: false, vertical: true)
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             trusted = PermissionCheck.isTrusted
+            microphoneAuthorized = PermissionCheck.isMicrophoneAuthorized
         }
+        .task { await refreshVoiceModelState() }
     }
 
     private func shortcutRow(_ title: String, combo: Binding<KeyCombo>) -> some View {
@@ -71,4 +92,53 @@ struct SettingsView: View {
                 .fixedSize()
         }
     }
+
+    @ViewBuilder
+    private var voiceModelControl: some View {
+        switch voiceModelState {
+        case .checking:
+            ProgressView()
+                .controlSize(.small)
+        case .notDownloaded:
+            Button("Download…") { downloadVoiceModel() }
+                .controlSize(.small)
+        case .downloading:
+            HStack(spacing: 6) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Downloading…")
+                    .foregroundStyle(.secondary)
+            }
+        case .ready:
+            Label("Downloaded", systemImage: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+        case .failed:
+            Button("Retry download…") { downloadVoiceModel() }
+                .controlSize(.small)
+        }
+    }
+
+    private func refreshVoiceModelState() async {
+        voiceModelState = await VoiceAnnotationService.shared.isVoiceModelReady() ? .ready : .notDownloaded
+    }
+
+    private func downloadVoiceModel() {
+        voiceModelState = .downloading
+        Task {
+            do {
+                try await VoiceAnnotationService.shared.downloadVoiceModel()
+                voiceModelState = .ready
+            } catch {
+                voiceModelState = .failed
+            }
+        }
+    }
+}
+
+private enum VoiceModelState {
+    case checking
+    case notDownloaded
+    case downloading
+    case ready
+    case failed
 }

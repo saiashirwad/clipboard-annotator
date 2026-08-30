@@ -24,6 +24,8 @@
     <string>14.0</string>
     <key>LSUIElement</key>
     <true/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Clipboard Annotator records your voice to make a voice annotation.</string>
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSPrincipalClass</key>

@@ -10,6 +10,7 @@ final class AppSettings: ObservableObject {
     private let defaults = UserDefaults.standard
 
     @Published var captureCombo: KeyCombo { didSet { persist(captureCombo, key: "captureCombo"); onHotKeysChanged?() } }
+    @Published var voiceCaptureCombo: KeyCombo { didSet { persist(voiceCaptureCombo, key: "voiceCaptureCombo"); onHotKeysChanged?() } }
     @Published var copyCombo: KeyCombo { didSet { persist(copyCombo, key: "copyCombo"); onHotKeysChanged?() } }
     @Published var stackCombo: KeyCombo { didSet { persist(stackCombo, key: "stackCombo"); onHotKeysChanged?() } }
     @Published var clearCombo: KeyCombo { didSet { persist(clearCombo, key: "clearCombo"); onHotKeysChanged?() } }
@@ -38,6 +39,8 @@ final class AppSettings: ObservableObject {
     private init() {
         captureCombo = AppSettings.read("captureCombo", from: defaults)
             ?? KeyCombo(keyCode: UInt16(kVK_ANSI_A), modifiers: [.control, .command])
+        voiceCaptureCombo = AppSettings.read("voiceCaptureCombo", from: defaults)
+            ?? KeyCombo(keyCode: UInt16(kVK_ANSI_E), modifiers: [.control, .command])
         copyCombo = AppSettings.read("copyCombo", from: defaults)
             ?? KeyCombo(keyCode: UInt16(kVK_ANSI_V), modifiers: [.control, .command])
         stackCombo = AppSettings.read("stackCombo", from: defaults)

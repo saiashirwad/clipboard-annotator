@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import AVFoundation
 
 enum PermissionCheck {
     static var isTrusted: Bool { AXIsProcessTrusted() }
@@ -34,6 +35,15 @@ enum PermissionCheck {
 
     static func openAccessibilitySettings() {
         let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
+        NSWorkspace.shared.open(url)
+    }
+
+    static var isMicrophoneAuthorized: Bool {
+        AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+    }
+
+    static func openMicrophoneSettings() {
+        let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!
         NSWorkspace.shared.open(url)
     }
 }

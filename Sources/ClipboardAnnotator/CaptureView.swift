@@ -23,6 +23,7 @@ struct CaptureView: View {
                 quoteBlock
             }
             noteEditor
+            voiceStatus
         }
         .padding(14)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -83,5 +84,29 @@ struct CaptureView: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.1), lineWidth: 1)
         )
+    }
+
+    @ViewBuilder
+    private var voiceStatus: some View {
+        switch model.voiceState {
+        case .idle:
+            EmptyView()
+        case .recording:
+            Label("Listening… Release the shortcut to save.", systemImage: "mic.fill")
+                .foregroundStyle(.red)
+                .font(.footnote)
+        case .preparingModel:
+            Label("Downloading the local voice model…", systemImage: "arrow.down.circle")
+                .foregroundStyle(.secondary)
+                .font(.footnote)
+        case .transcribing:
+            Label("Transcribing on this Mac…", systemImage: "waveform")
+                .foregroundStyle(.secondary)
+                .font(.footnote)
+        case let .failed(message):
+            Label(message, systemImage: "exclamationmark.triangle")
+                .foregroundStyle(.orange)
+                .font(.footnote)
+        }
     }
 }

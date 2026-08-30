@@ -189,6 +189,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HotKeyCenter.shared.register(name: "capture", combo: settings.captureCombo) { [weak self] in
             self?.captureSelection()
         }
+        HotKeyCenter.shared.registerHold(
+            name: "voiceCapture",
+            combo: settings.voiceCaptureCombo,
+            pressed: { [weak self] in self?.captureVoiceSelection() },
+            released: { CaptureController.shared.endVoiceCapture() }
+        )
         HotKeyCenter.shared.register(name: "copy", combo: settings.copyCombo) { [weak self] in
             self?.copyMarkdown()
         }
@@ -206,6 +212,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func captureSelection() {
         Diag.log("captureSelection invoked")
         CaptureController.shared.beginCapture()
+    }
+
+    private func captureVoiceSelection() {
+        Diag.log("voice capture invoked")
+        CaptureController.shared.beginVoiceCapture()
     }
 
     @objc private func copyMarkdown() {

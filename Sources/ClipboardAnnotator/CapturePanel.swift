@@ -16,20 +16,26 @@ final class CaptureController {
     private var panel: CapturePanel?
     private var model: CaptureModel?
     private var keyMonitor: Any?
+    private var voicePanel: CapturePanel?
+    private var voiceModel: VoiceCaptureModel?
+    private var voiceKeyMonitor: Any?
     private var previousApp: NSRunningApplication?
+    private var voiceKeyIsHeld = false
+    private var voiceStartTask: Task<Void, Never>?
+    private var voiceFinishTask: Task<Void, Never>?
 
     private let panelWidth: CGFloat = 460
     private let panelHeight: CGFloat = 260
 
     private init() {}
 
-    var isOpen: Bool { panel != nil }
+    var isOpen: Bool { panel != nil || voicePanel != nil }
 
     func beginCapture() {
         if isOpen {
             // Second press while open: just bring it back to the front.
             NSApp.activate(ignoringOtherApps: true)
-            panel?.makeKeyAndOrderFront(nil)
+            (panel ?? voicePanel)?.makeKeyAndOrderFront(nil)
             return
         }
 
@@ -38,6 +44,45 @@ final class CaptureController {
         previousApp = NSWorkspace.shared.frontmostApplication
         let captured = SelectionCapture.capture()
         present(captured)
+    }
+
+    /// Starts a capture and a microphone recording together. `endVoiceCapture`
+    /// is called by the matching global-hotkey release event.
+    func beginVoiceCapture() {
+        guard PermissionCheck.ensureAccessibility() else { return }
+
+        if isOpen {
+            NSSound.beep()
+            return
+        }
+
+        voiceKeyIsHeld = true
+        previousApp = NSWorkspace.shared.frontmostApplication
+
+        // Start before the selection fallback. That fallback must wait for the
+        // physical modifiers to lift before it can copy text from some apps.
+        if VoiceAnnotationService.shared.isMicrophoneAuthorized {
+            do {
+                try VoiceAnnotationService.shared.startRecording()
+            } catch {
+                Diag.log("voice recording failed: \(error.localizedDescription)")
+            }
+        }
+        let captured = SelectionCapture.capture()
+        presentVoice(captured)
+        if VoiceAnnotationService.shared.isRecording {
+            voiceModel?.state = .recording
+        } else {
+            startVoiceRecording()
+        }
+    }
+
+    func endVoiceCapture() {
+        voiceKeyIsHeld = false
+        guard voicePanel != nil, voiceModel != nil else { return }
+
+        guard VoiceAnnotationService.shared.isRecording else { return }
+        finishVoiceCapture()
     }
 
     private func present(_ captured: CapturedSelection) {
@@ -81,6 +126,35 @@ final class CaptureController {
         // activate, or activating drags it forward with the panel.
         NotificationCenter.default.post(name: .captureWillPresent, object: nil)
 
+        NSApp.activate(ignoringOtherApps: true)
+        panel.makeKeyAndOrderFront(nil)
+    }
+
+    private func presentVoice(_ captured: CapturedSelection) {
+        let panel = CapturePanel(
+            contentRect: NSRect(x: 0, y: 0, width: 380, height: 190),
+            styleMask: [.titled, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        panel.titleVisibility = .hidden
+        panel.titlebarAppearsTransparent = true
+        panel.standardWindowButton(.closeButton)?.isHidden = true
+        panel.isMovableByWindowBackground = true
+        panel.level = .floating
+        panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.animationBehavior = .utilityWindow
+
+        let model = VoiceCaptureModel(captured: captured)
+        voiceModel = model
+        panel.contentView = NSHostingView(rootView: VoiceCaptureView(model: model))
+        position(panel, near: captured.screenRect)
+        voicePanel = panel
+        installVoiceKeyMonitor()
+
+        NotificationCenter.default.post(name: .captureWillPresent, object: nil)
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
     }
@@ -145,7 +219,102 @@ final class CaptureController {
         }
     }
 
+    private func installVoiceKeyMonitor() {
+        voiceKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, let panel = self.voicePanel, event.window === panel else { return event }
+            if event.keyCode == 53 { // escape
+                self.dismissVoice(returnFocus: true)
+                return nil
+            }
+            return event
+        }
+    }
+
     // MARK: - Finish
+
+    private func startVoiceRecording() {
+        guard let voiceModel else { return }
+        voiceModel.state = .idle
+        voiceStartTask?.cancel()
+
+        if VoiceAnnotationService.shared.isMicrophoneAuthorized {
+            do {
+                try VoiceAnnotationService.shared.startRecording()
+                voiceModel.state = .recording
+            } catch {
+                voiceModel.state = .failed(error.localizedDescription)
+                Diag.log("voice recording failed: \(error.localizedDescription)")
+            }
+            return
+        }
+
+        voiceStartTask = Task { [weak self, weak voiceModel] in
+            guard let self, let voiceModel else { return }
+            guard await VoiceAnnotationService.shared.requestMicrophoneAccess() else {
+                guard self.voiceModel === voiceModel, self.voicePanel != nil else { return }
+                voiceModel.state = .failed("Microphone access is not allowed.")
+                return
+            }
+            guard !Task.isCancelled, self.voiceModel === voiceModel, self.voicePanel != nil else { return }
+            guard self.voiceKeyIsHeld else {
+                voiceModel.state = .failed("Hold the voice shortcut again to record.")
+                return
+            }
+
+            do {
+                try VoiceAnnotationService.shared.startRecording()
+                guard self.voiceModel === voiceModel, self.voicePanel != nil else {
+                    VoiceAnnotationService.shared.discardRecording()
+                    return
+                }
+                voiceModel.state = .recording
+            } catch {
+                guard self.voiceModel === voiceModel, self.voicePanel != nil else { return }
+                voiceModel.state = .failed(error.localizedDescription)
+                Diag.log("voice recording failed: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func finishVoiceCapture() {
+        guard let voiceModel, voicePanel != nil, VoiceAnnotationService.shared.isRecording else { return }
+        voiceModel.state = .transcribing
+        voiceFinishTask?.cancel()
+
+        voiceFinishTask = Task { [weak self, weak voiceModel] in
+            guard let self, let voiceModel else { return }
+
+            // This tells the user why their first annotation takes longer.
+            if !(await VoiceAnnotationService.shared.isVoiceModelReady()) {
+                guard self.voiceModel === voiceModel, self.voicePanel != nil else { return }
+                voiceModel.state = .preparingModel
+            }
+
+            do {
+                let transcript = try await VoiceAnnotationService.shared.stopAndTranscribe()
+                guard self.voiceModel === voiceModel, self.voicePanel != nil else { return }
+                guard !transcript.isEmpty else {
+                    voiceModel.state = .failed("No speech was found.")
+                    return
+                }
+
+                AnnotationStore.shared.add(
+                    Annotation(
+                        quote: voiceModel.captured.text,
+                        note: transcript,
+                        sourceApp: voiceModel.captured.appName,
+                        sourceURL: nil
+                    )
+                )
+                Diag.log("saved voice annotation, note=\(transcript.prefix(30).debugDescription)")
+                self.dismissVoice(returnFocus: true)
+            } catch {
+                guard self.voiceModel === voiceModel, self.voicePanel != nil else { return }
+                voiceModel.state = .failed(error.localizedDescription)
+                Diag.log("voice transcription failed: \(error.localizedDescription)")
+            }
+        }
+    }
 
     /// Saves the panel that is actually on screen. Nothing else can trigger it.
     private func commit() {
@@ -179,6 +348,27 @@ final class CaptureController {
         panel?.contentView = nil
         panel = nil
         model = nil
+
+        if returnFocus, AppSettings.shared.restoreFocusAfterSave,
+           let previousApp, previousApp.bundleIdentifier != Bundle.main.bundleIdentifier {
+            previousApp.activate()
+        }
+        previousApp = nil
+    }
+
+    private func dismissVoice(returnFocus: Bool) {
+        voiceStartTask?.cancel()
+        voiceStartTask = nil
+        voiceFinishTask?.cancel()
+        voiceFinishTask = nil
+        VoiceAnnotationService.shared.discardRecording()
+        voiceKeyIsHeld = false
+        if let voiceKeyMonitor { NSEvent.removeMonitor(voiceKeyMonitor) }
+        voiceKeyMonitor = nil
+        voicePanel?.orderOut(nil)
+        voicePanel?.contentView = nil
+        voicePanel = nil
+        voiceModel = nil
 
         if returnFocus, AppSettings.shared.restoreFocusAfterSave,
            let previousApp, previousApp.bundleIdentifier != Bundle.main.bundleIdentifier {

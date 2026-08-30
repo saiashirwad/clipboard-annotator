@@ -12,6 +12,7 @@ import Combine
 final class CaptureModel: ObservableObject {
     @Published var note: String = ""
     @Published var expanded: Bool = false
+    @Published var voiceState: VoiceState = .idle
 
     let captured: CapturedSelection
     let stackCount: Int
@@ -20,4 +21,12 @@ final class CaptureModel: ObservableObject {
         self.captured = captured
         self.stackCount = stackCount
     }
+}
+
+enum VoiceState: Equatable {
+    case idle
+    case recording
+    case preparingModel
+    case transcribing
+    case failed(String)
 }

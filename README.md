@@ -8,6 +8,7 @@ about it. Notes collect in a stack. Paste the stack anywhere as Markdown.
 | Key   | Action                                           |
 | ----- | ------------------------------------------------ |
 | `⌃⌘A` | Capture the selection and open the note box      |
+| `⌃⌘E` | Hold to record a voice annotation; release to save |
 | `⌘↩`  | Save the note, close the box                     |
 | `⎋`   | Discard the note                                 |
 | `⌃⌘V` | Paste the stack as Markdown into the current app |
@@ -61,3 +62,8 @@ only the notarize-and-staple step would be missing.
 **Accessibility**, in System Settings → Privacy & Security → Accessibility.
 Required to read selections in other apps and to send the synthetic keystrokes.
 Nothing works without it.
+
+**Microphone**, when you first use the voice shortcut. Voice annotations use
+FluidAudio, the local transcription engine used by Hex. The first voice
+annotation downloads its Parakeet model. You can download it first in Settings.
+Audio and transcription stay on your Mac.
