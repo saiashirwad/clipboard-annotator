@@ -18,8 +18,8 @@ final class CaptureController {
     private var keyMonitor: Any?
     private var previousApp: NSRunningApplication?
 
-    private let panelWidth: CGFloat = 480
-    private let panelHeight: CGFloat = 320
+    private let panelWidth: CGFloat = 460
+    private let panelHeight: CGFloat = 260
 
     private init() {}
 
@@ -49,6 +49,7 @@ final class CaptureController {
         )
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
+        panel.standardWindowButton(.closeButton)?.isHidden = true
         panel.standardWindowButton(.zoomButton)?.isHidden = true
         panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
         panel.isMovableByWindowBackground = true
@@ -66,9 +67,9 @@ final class CaptureController {
             onSave: { [weak self] in self?.commit() },
             onCancel: { [weak self] in self?.dismiss(returnFocus: true) }
         )
+        // The hosting view fills the whole frame, title-bar strip included, so
+        // the material runs edge to edge under the transparent title bar.
         let hosting = NSHostingView(rootView: view)
-        hosting.frame = panel.contentLayoutRect
-        hosting.autoresizingMask = [.width, .height]
         panel.contentView = hosting
 
         position(panel, near: captured.screenRect)

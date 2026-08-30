@@ -29,7 +29,7 @@ final class KeyRecorderView: NSView {
     }
 
     override var acceptsFirstResponder: Bool { true }
-    override var intrinsicContentSize: NSSize { NSSize(width: 130, height: 24) }
+    override var intrinsicContentSize: NSSize { NSSize(width: 120, height: 24) }
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
@@ -61,17 +61,31 @@ final class KeyRecorderView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 5, yRadius: 5)
-        (recording ? NSColor.controlAccentColor.withAlphaComponent(0.12) : NSColor.textBackgroundColor).setFill()
+        let inset: CGFloat = recording ? 1 : 0.5
+        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: inset, dy: inset), xRadius: 6, yRadius: 6)
+        (recording
+            ? NSColor.controlAccentColor.withAlphaComponent(0.12)
+            : NSColor.labelColor.withAlphaComponent(0.05)).setFill()
         path.fill()
         (recording ? NSColor.controlAccentColor : NSColor.separatorColor).setStroke()
-        path.lineWidth = recording ? 2 : 1
+        path.lineWidth = recording ? 1.5 : 1
         path.stroke()
 
-        let text = recording ? "Press keys…" : (combo?.displayString ?? "Not set")
+        let text: String
+        let color: NSColor
+        if recording {
+            text = "Type shortcut…"
+            color = .controlAccentColor
+        } else if let combo {
+            text = combo.displayString
+            color = .labelColor
+        } else {
+            text = "Click to set"
+            color = .tertiaryLabelColor
+        }
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 12, weight: .medium),
-            .foregroundColor: recording ? NSColor.controlAccentColor : NSColor.labelColor,
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium),
+            .foregroundColor: color,
         ]
         let size = (text as NSString).size(withAttributes: attrs)
         (text as NSString).draw(
