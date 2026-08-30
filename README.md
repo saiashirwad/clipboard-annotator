@@ -31,6 +31,31 @@ the Accessibility grant across rebuilds. Set `CODESIGN_IDENTITY` to choose a
 different one. With no certificate it signs ad-hoc, and macOS asks for
 Accessibility again after every build.
 
+## Running a downloaded build
+
+The build attached to a release is signed, but signed is not the same as
+distributable. It uses an Apple Development certificate rather than a Developer
+ID, and it is not notarized, so Gatekeeper blocks it:
+
+```
+$ spctl -a -t exec -vv "Clipboard Annotator.app"
+Clipboard Annotator.app: rejected
+```
+
+Strip the quarantine flag to run it anyway:
+
+```sh
+xattr -dr com.apple.quarantine "/Applications/Clipboard Annotator.app"
+```
+
+Building from source avoids this, because a locally built app is never
+quarantined.
+
+Opening normally would need a paid Apple Developer Program membership, a
+**Developer ID Application** certificate, and notarization with `notarytool`.
+`build.sh` already prefers a Developer ID certificate over a Development one, so
+only the notarize-and-staple step would be missing.
+
 ## Permissions
 
 **Accessibility**, in System Settings → Privacy & Security → Accessibility.
