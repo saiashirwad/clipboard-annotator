@@ -132,15 +132,16 @@ final class CaptureController {
 
     private func presentVoice(_ captured: CapturedSelection) {
         let panel = CapturePanel(
-            contentRect: NSRect(x: 0, y: 0, width: 380, height: 190),
-            styleMask: [.titled, .fullSizeContentView],
+            contentRect: NSRect(x: 0, y: 0, width: 190, height: 66),
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
-        panel.titleVisibility = .hidden
-        panel.titlebarAppearsTransparent = true
-        panel.standardWindowButton(.closeButton)?.isHidden = true
-        panel.isMovableByWindowBackground = true
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.isMovableByWindowBackground = false
+        panel.ignoresMouseEvents = true
         panel.level = .floating
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
@@ -150,7 +151,7 @@ final class CaptureController {
         let model = VoiceCaptureModel(captured: captured)
         voiceModel = model
         panel.contentView = NSHostingView(rootView: VoiceCaptureView(model: model))
-        position(panel, near: captured.screenRect)
+        positionVoiceOverlay(panel, for: captured)
         voicePanel = panel
         installVoiceKeyMonitor()
 
@@ -183,6 +184,19 @@ final class CaptureController {
             origin.x = min(max(origin.x, visible.minX + 8), visible.maxX - size.width - 8)
             origin.y = min(max(origin.y, visible.minY + 8), visible.maxY - size.height - 8)
         }
+        panel.setFrameOrigin(origin)
+    }
+
+    private func positionVoiceOverlay(_ panel: NSPanel, for captured: CapturedSelection) {
+        let screen = captured.screenRect.flatMap(screenContaining(quartzRect:))
+            ?? screenContaining(point: NSEvent.mouseLocation)
+            ?? NSScreen.main
+        guard let visible = screen?.visibleFrame else { return }
+
+        let origin = NSPoint(
+            x: visible.midX - panel.frame.width / 2,
+            y: visible.minY + 20
+        )
         panel.setFrameOrigin(origin)
     }
 

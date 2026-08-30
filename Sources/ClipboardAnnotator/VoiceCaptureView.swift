@@ -5,42 +5,21 @@ struct VoiceCaptureView: View {
     @ObservedObject var model: VoiceCaptureModel
 
     var body: some View {
-        VStack(spacing: 14) {
+        Group {
             if case let .failed(message) = model.state {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 30))
                     .foregroundStyle(.orange)
-                Text(message)
-                    .multilineTextAlignment(.center)
-                Text("Press Escape to close")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .accessibilityLabel(message)
             } else {
                 VoiceWaveform(active: model.state != .idle)
-                Text(statusText)
-                    .font(.headline)
-                Text("Press Escape to cancel")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(22)
-        .background(.regularMaterial)
-        .ignoresSafeArea()
-    }
-
-    private var statusText: String {
-        switch model.state {
-        case .recording:
-            return "Listening…"
-        case .preparingModel:
-            return "Preparing the voice model…"
-        case .transcribing:
-            return "Transcribing…"
-        case .idle, .failed:
-            return "Starting voice annotation…"
-        }
+        .frame(width: 170, height: 46)
+        .padding(.horizontal, 10)
+        .background(.regularMaterial, in: Capsule())
+        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.12), lineWidth: 1))
+        .shadow(color: .black.opacity(0.22), radius: 10, y: 4)
+        .accessibilityLabel("Voice annotation")
     }
 }
 
@@ -48,7 +27,7 @@ private struct VoiceWaveform: View {
     let active: Bool
     @State private var animate = false
 
-    private let heights: [CGFloat] = [18, 32, 48, 36, 56, 30, 20]
+    private let heights: [CGFloat] = [12, 20, 28, 22, 30, 18, 12]
 
     var body: some View {
         HStack(alignment: .center, spacing: 6) {
@@ -56,7 +35,7 @@ private struct VoiceWaveform: View {
                 bar(at: index)
             }
         }
-        .frame(height: 58)
+        .frame(height: 32)
         .onAppear { animate = true }
         .onChange(of: active) { _, isActive in
             animate = isActive
