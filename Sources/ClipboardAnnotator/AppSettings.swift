@@ -14,6 +14,7 @@ final class AppSettings {
     var voiceCaptureCombo: KeyCombo { didSet { persist(voiceCaptureCombo, key: "voiceCaptureCombo"); onHotKeysChanged?() } }
     var copyCombo: KeyCombo { didSet { persist(copyCombo, key: "copyCombo"); onHotKeysChanged?() } }
     var stackCombo: KeyCombo { didSet { persist(stackCombo, key: "stackCombo"); onHotKeysChanged?() } }
+    var switchSessionCombo: KeyCombo { didSet { persist(switchSessionCombo, key: "switchSessionCombo"); onHotKeysChanged?() } }
     var clearCombo: KeyCombo { didSet { persist(clearCombo, key: "clearCombo"); onHotKeysChanged?() } }
 
     var includeSource: Bool { didSet { defaults.set(includeSource, forKey: "includeSource") } }
@@ -46,6 +47,8 @@ final class AppSettings {
             ?? KeyCombo(keyCode: UInt16(kVK_ANSI_V), modifiers: [.control, .command])
         stackCombo = AppSettings.read("stackCombo", from: defaults)
             ?? KeyCombo(keyCode: UInt16(kVK_ANSI_S), modifiers: [.control, .command])
+        switchSessionCombo = AppSettings.read("switchSessionCombo", from: defaults)
+            ?? KeyCombo(keyCode: UInt16(kVK_ANSI_K), modifiers: [.control, .command])
         clearCombo = AppSettings.read("clearCombo", from: defaults)
             ?? KeyCombo(keyCode: UInt16(kVK_Delete), modifiers: [.control, .command])
 

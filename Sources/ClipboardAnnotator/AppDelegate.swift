@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var stackWindow: NSWindow?
     private var settingsWindow: NSWindow?
+    private var quickSwitchWindow: NSPanel?
     private enum StoreState {
         case loading
         case available(AnnotationStore)
@@ -15,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var storeState: StoreState = .loading
     private var bootstrapTask: Task<Void, Never>?
+    private var menuMutationTask: Task<Void, Never>?
     private var captureObserver: NSObjectProtocol?
 
     private var flashToken = 0
@@ -111,6 +113,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         bootstrapTask?.cancel()
         bootstrapTask = nil
+        menuMutationTask?.cancel()
+        menuMutationTask = nil
+        tearDownQuickSwitcher()
         captureController.teardown()
         store?.teardown()
         if let captureObserver {
@@ -118,7 +123,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.captureObserver = nil
         }
         settings.onHotKeysChanged = nil
-        for name in ["capture", "voiceCapture", "copy", "stack", "clear"] {
+        for name in ["capture", "voiceCapture", "copy", "stack", "switchSession", "clear"] {
             HotKeyCenter.shared.unregister(name: name)
         }
     }
@@ -213,9 +218,75 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         apply(settings.stackCombo, to: show)
         menu.addItem(show)
 
+        let facts = store.map {
+            SessionUIFacts(
+                sessions: $0.sessions,
+                currentSessionID: $0.currentSessionID,
+                lastCleared: $0.lastCleared
+            )
+        }
+        if let facts, let current = facts.current {
+            let summary = NSMenuItem(title: facts.currentTitle, action: nil, keyEquivalent: "")
+            menu.addItem(summary)
+
+            let sessionMenu = NSMenu(title: "Session")
+            for session in facts.sessions {
+                let item = NSMenuItem(
+                    title: "\(session.name) (\(session.annotationCount))",
+                    action: #selector(switchToSession(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = self
+                item.representedObject = session.id as NSUUID
+                item.state = session.isCurrent ? .on : .off
+                sessionMenu.addItem(item)
+            }
+            sessionMenu.addItem(.separator())
+
+            let quickSwitch = NSMenuItem(
+                title: "Switch Session…",
+                action: #selector(showQuickSwitcher),
+                keyEquivalent: ""
+            )
+            quickSwitch.target = self
+            apply(settings.switchSessionCombo, to: quickSwitch)
+            sessionMenu.addItem(quickSwitch)
+            sessionMenu.addItem(.separator())
+
+            let newSession = NSMenuItem(
+                title: "New Session…",
+                action: #selector(newSession(_:)),
+                keyEquivalent: ""
+            )
+            newSession.target = self
+            sessionMenu.addItem(newSession)
+
+            let rename = NSMenuItem(
+                title: "Rename Current Session…",
+                action: #selector(renameSession(_:)),
+                keyEquivalent: ""
+            )
+            rename.target = self
+            rename.representedObject = current.id as NSUUID
+            sessionMenu.addItem(rename)
+
+            let delete = NSMenuItem(
+                title: "Delete Current Session…",
+                action: facts.canDelete ? #selector(deleteSession(_:)) : nil,
+                keyEquivalent: ""
+            )
+            delete.target = self
+            delete.representedObject = current.id as NSUUID
+            sessionMenu.addItem(delete)
+
+            let sessionRoot = NSMenuItem(title: "Session", action: nil, keyEquivalent: "")
+            sessionRoot.submenu = sessionMenu
+            menu.addItem(sessionRoot)
+        }
+
         menu.addItem(.separator())
 
-        let count = store?.currentEntries.count ?? 0
+        let count = facts?.current?.annotationCount ?? 0
         let verb = settings.pasteDirectly ? "Paste" : "Copy"
         let copy = NSMenuItem(
             title: count > 0
@@ -228,20 +299,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         apply(settings.copyCombo, to: copy)
         menu.addItem(copy)
 
-        let clear = NSMenuItem(title: "Clear Stack", action: count > 0 ? #selector(clearStack) : nil, keyEquivalent: "")
+        let clear = NSMenuItem(
+            title: facts?.current.map { "Clear \($0.name)" } ?? "Clear Current Session",
+            action: count > 0 ? #selector(clearSession(_:)) : nil,
+            keyEquivalent: ""
+        )
         clear.target = self
+        clear.representedObject = facts?.current?.id as NSUUID?
         apply(settings.clearCombo, to: clear)
         menu.addItem(clear)
 
-        if let undoCount = store?.lastCleared?.entries.count, undoCount > 0 {
-            let undo = NSMenuItem(
-                title: "Undo Clear (\(undoCount))",
+        if let undo = facts?.undo {
+            let item = NSMenuItem(
+                title: undo.title,
                 action: #selector(undoClear),
                 keyEquivalent: "z"
             )
-            undo.keyEquivalentModifierMask = [.command]
-            undo.target = self
-            menu.addItem(undo)
+            item.keyEquivalentModifierMask = [.command]
+            item.target = self
+            menu.addItem(item)
+        }
+
+        if let error = store?.error {
+            menu.addItem(.separator())
+            let errorItem = NSMenuItem(
+                title: annotationStoreErrorMessage(error),
+                action: nil,
+                keyEquivalent: ""
+            )
+            menu.addItem(errorItem)
+            if store?.hasPendingMutations == true {
+                let retry = NSMenuItem(
+                    title: "Retry Pending Session Changes",
+                    action: #selector(retryPendingMutations),
+                    keyEquivalent: ""
+                )
+                retry.target = self
+                menu.addItem(retry)
+            }
         }
 
         menu.addItem(.separator())
@@ -287,6 +382,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HotKeyCenter.shared.register(name: "stack", combo: settings.stackCombo) { [weak self] in
             self?.showStack()
         }
+        HotKeyCenter.shared.register(name: "switchSession", combo: settings.switchSessionCombo) { [weak self] in
+            self?.showQuickSwitcher()
+        }
         HotKeyCenter.shared.register(name: "clear", combo: settings.clearCombo) { [weak self] in
             self?.clearStack()
         }
@@ -314,6 +412,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSSound.beep()
             return
         }
+        if settings.clearAfterCopy {
+            observeMenuMutation(store: store, presentsError: false)
+        }
 
         guard settings.pasteDirectly else {
             flashStatus("Copied \(count)")
@@ -328,16 +429,117 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func clearStack() {
         guard let store else { NSSound.beep(); return }
-        let count = store.currentEntries.count
-        Diag.log("clearStack invoked, count=\(count)")
-        guard count > 0 else { NSSound.beep(); return }
-        store.mutate(.clearSession(sessionID: store.currentSessionID))
-        flashStatus("Cleared \(count)")
+        let sessionID = store.currentSessionID
+        guard let session = store.sessions.first(where: { $0.id == sessionID }), !session.entries.isEmpty else {
+            NSSound.beep()
+            return
+        }
+        Diag.log("clearStack invoked, session=\(sessionID), count=\(session.entries.count)")
+        enqueueMenuMutation(.clearSession(sessionID: sessionID))
+    }
+
+    @objc private func clearSession(_ sender: NSMenuItem) {
+        guard let sessionID = capturedSessionID(from: sender) else { NSSound.beep(); return }
+        enqueueMenuMutation(.clearSession(sessionID: sessionID))
     }
 
     @objc private func undoClear() {
+        guard store != nil else { NSSound.beep(); return }
+        enqueueMenuMutation(.undoClear)
+    }
+
+    @objc private func switchToSession(_ sender: NSMenuItem) {
+        guard let sessionID = capturedSessionID(from: sender) else { NSSound.beep(); return }
+        enqueueMenuMutation(.switchSession(sessionID: sessionID))
+    }
+
+    @objc private func newSession(_ sender: NSMenuItem) {
         guard let store else { NSSound.beep(); return }
-        store.mutate(.undoClear)
+        let sessions = store.sessions
+        guard
+            let draft = SessionDialogs.requestNewSessionName(sessions: sessions),
+            let name = SessionDialogs.validateForEnqueue(
+                draft,
+                excluding: nil,
+                sessions: store.sessions
+            )
+        else { return }
+        enqueueMenuMutation(.createSession(Session(name: name)), presentsError: true)
+    }
+
+    @objc private func renameSession(_ sender: NSMenuItem) {
+        guard let store, let sessionID = capturedSessionID(from: sender) else {
+            NSSound.beep()
+            return
+        }
+        let sessions = store.sessions
+        guard
+            let draft = SessionDialogs.requestRenamedSessionName(
+                sessionID: sessionID,
+                sessions: sessions
+            ),
+            let name = SessionDialogs.validateForEnqueue(
+                draft,
+                excluding: sessionID,
+                sessions: store.sessions
+            )
+        else { return }
+        enqueueMenuMutation(
+            .renameSession(sessionID: sessionID, name: name),
+            presentsError: true
+        )
+    }
+
+    @objc private func deleteSession(_ sender: NSMenuItem) {
+        guard let store, let sessionID = capturedSessionID(from: sender) else {
+            NSSound.beep()
+            return
+        }
+        let sessions = store.sessions
+        guard SessionDialogs.confirmsDelete(
+            sessionID: sessionID,
+            sessions: sessions,
+            lastCleared: store.lastCleared
+        ) else { return }
+        enqueueMenuMutation(.deleteSession(sessionID: sessionID), presentsError: true)
+    }
+
+    @objc private func retryPendingMutations() {
+        guard let store else { NSSound.beep(); return }
+        store.retryPendingMutations()
+        observeMenuMutation(store: store, presentsError: true)
+    }
+
+    private func capturedSessionID(from sender: NSMenuItem) -> UUID? {
+        if let id = sender.representedObject as? UUID { return id }
+        if let id = sender.representedObject as? NSUUID { return id as UUID }
+        return nil
+    }
+
+    private func enqueueMenuMutation(
+        _ mutation: SessionDocumentMutation,
+        presentsError: Bool = false
+    ) {
+        guard let store else { NSSound.beep(); return }
+        store.mutate(mutation)
+        observeMenuMutation(store: store, presentsError: presentsError)
+    }
+
+    private func observeMenuMutation(store: AnnotationStore, presentsError: Bool) {
+        menuMutationTask?.cancel()
+        menuMutationTask = Task { [weak self, weak store] in
+            guard let self, let store else { return }
+            await store.waitForIdle()
+            guard !Task.isCancelled else { return }
+            menuMutationTask = nil
+            refreshStatusItem()
+            if let error = store.error {
+                NSSound.beep()
+                if presentsError {
+                    SessionDialogs.showMessage(annotationStoreErrorMessage(error))
+                }
+            }
+        }
     }
 
     @objc private func showStack() {
@@ -361,6 +563,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         stackWindow = window
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
+    }
+
+    @objc private func showQuickSwitcher() {
+        guard let store else { NSSound.beep(); return }
+        if let quickSwitchWindow {
+            NSApp.activate(ignoringOtherApps: true)
+            quickSwitchWindow.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 390, height: 160),
+            styleMask: [.titled, .closable, .utilityWindow],
+            backing: .buffered,
+            defer: false
+        )
+        panel.title = "Switch Session"
+        panel.isReleasedWhenClosed = false
+        panel.isFloatingPanel = true
+        panel.center()
+        let hosting = NSHostingView(rootView: QuickSwitchView(
+            store: store,
+            onSwitch: { [weak self] sessionID in
+                self?.switchFromQuickSwitcher(to: sessionID)
+            },
+            onClose: { [weak self] in self?.tearDownQuickSwitcher() }
+        ))
+        panel.contentView = hosting
+        panel.setContentSize(hosting.fittingSize)
+        panel.delegate = self
+        quickSwitchWindow = panel
+        NSApp.activate(ignoringOtherApps: true)
+        panel.makeKeyAndOrderFront(nil)
+    }
+
+    private func switchFromQuickSwitcher(to sessionID: UUID) {
+        enqueueMenuMutation(
+            .switchSession(sessionID: sessionID),
+            presentsError: true
+        )
+        tearDownQuickSwitcher()
+    }
+
+    private func tearDownQuickSwitcher(closing closingPanel: NSPanel? = nil) {
+        guard let panel = quickSwitchWindow else { return }
+        quickSwitchWindow = nil
+        panel.delegate = nil
+        guard panel !== closingPanel else { return }
+        panel.orderOut(nil)
+        panel.close()
     }
 
     @objc private func showSettings() {
@@ -387,12 +639,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
     }
 
-    /// Tuck away the stack and settings windows so a capture shows the note box
-    /// alone. They keep their contents and position; ⌃⌘S brings the stack back.
+    /// Tuck away auxiliary windows so a capture shows the note box alone.
     private func hideAuxiliaryWindows() {
-        Diag.log("hideAuxiliaryWindows stack=\(stackWindow?.isVisible ?? false) settings=\(settingsWindow?.isVisible ?? false)")
+        Diag.log("hideAuxiliaryWindows stack=\(stackWindow?.isVisible ?? false) settings=\(settingsWindow?.isVisible ?? false) quickSwitch=\(quickSwitchWindow?.isVisible ?? false)")
         stackWindow?.orderOut(nil)
         settingsWindow?.orderOut(nil)
+        quickSwitchWindow?.orderOut(nil)
     }
 
     @objc private func quit() {
@@ -405,5 +657,8 @@ extension AppDelegate: NSWindowDelegate {
         guard let window = notification.object as? NSWindow else { return }
         if window === stackWindow { stackWindow = nil }
         if window === settingsWindow { settingsWindow = nil }
+        if let panel = window as? NSPanel, panel === quickSwitchWindow {
+            tearDownQuickSwitcher(closing: panel)
+        }
     }
 }

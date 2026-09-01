@@ -14,7 +14,8 @@ struct SettingsView: View {
                 shortcutRow("Hold to make a voice annotation", combo: $settings.voiceCaptureCombo)
                 shortcutRow("Copy all as Markdown", combo: $settings.copyCombo)
                 shortcutRow("Show stack", combo: $settings.stackCombo)
-                shortcutRow("Clear the stack", combo: $settings.clearCombo)
+                shortcutRow("Switch session", combo: $settings.switchSessionCombo)
+                shortcutRow("Clear the current session", combo: $settings.clearCombo)
             } header: {
                 Text("Shortcuts")
             } footer: {

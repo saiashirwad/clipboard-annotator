@@ -10,12 +10,25 @@ struct StackView: View {
     @State private var justCopied = false
 
     private var entries: [ClipboardAnnotatorDomain.Annotation] { store.currentEntries }
-    private var undoCount: Int { store.lastCleared?.entries.count ?? 0 }
+    private var facts: SessionUIFacts {
+        SessionUIFacts(
+            sessions: store.sessions,
+            currentSessionID: store.currentSessionID,
+            lastCleared: store.lastCleared
+        )
+    }
+    private var undoCount: Int { facts.undo?.annotationCount ?? 0 }
+    private var currentSessionWasCleared: Bool {
+        facts.undo?.sessionID == store.currentSessionID
+    }
 
     var body: some View {
         VStack(spacing: 0) {
+            sessionBar
+            Divider()
+
             Group {
-                if entries.isEmpty && undoCount == 0 {
+                if entries.isEmpty && !currentSessionWasCleared {
                     emptyState
                 } else if entries.isEmpty {
                     clearedState
@@ -27,10 +40,47 @@ struct StackView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
+            if let error = store.error {
+                Divider()
+                errorBanner(error)
+            }
+
             Divider()
             footer
         }
         .frame(minWidth: 460, minHeight: 340)
+    }
+
+    private var sessionBar: some View {
+        let renderedSession = store.currentSession
+        let renderedSessionID = renderedSession.id
+
+        return HStack(spacing: 8) {
+            Picker(
+                "Session",
+                selection: Binding(
+                    get: { store.currentSessionID },
+                    set: { store.mutate(.switchSession(sessionID: $0)) }
+                )
+            ) {
+                ForEach(facts.sessions) { session in
+                    Text("\(session.name) (\(session.annotationCount))")
+                        .tag(session.id)
+                }
+            }
+            .frame(maxWidth: 240)
+
+            Spacer()
+
+            Button("New…", action: createSession)
+            Button("Rename…") { renameSession(sessionID: renderedSessionID) }
+            Button("Delete…") { deleteSession(sessionID: renderedSessionID) }
+                .disabled(!facts.canDelete)
+        }
+        .controlSize(.small)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.bar)
     }
 
     private var emptyState: some View {
@@ -148,8 +198,11 @@ struct StackView: View {
     }
 
     private var footer: some View {
-        HStack(spacing: 8) {
-            Text("\(entries.count) annotation\(entries.count == 1 ? "" : "s")")
+        let renderedSession = store.currentSession
+        let renderedSessionID = renderedSession.id
+
+        return HStack(spacing: 8) {
+            Text("\(renderedSession.name): \(entries.count) annotation\(entries.count == 1 ? "" : "s")")
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
 
@@ -164,15 +217,15 @@ struct StackView: View {
             .fixedSize()
             .disabled(entries.isEmpty)
 
-            if undoCount > 0 {
-                Button("Undo Clear (\(undoCount))") {
+            if let undo = facts.undo {
+                Button(undo.title) {
                     store.mutate(.undoClear)
                 }
                 .keyboardShortcut("z", modifiers: [.command])
             }
 
-            Button("Clear") {
-                store.mutate(.clearSession(sessionID: store.currentSessionID))
+            Button("Clear \(renderedSession.name)") {
+                store.mutate(.clearSession(sessionID: renderedSessionID))
             }
             .keyboardShortcut(.delete, modifiers: [.control, .command])
             .disabled(entries.isEmpty)
@@ -199,6 +252,63 @@ struct StackView: View {
         .padding(.vertical, 9)
         .background(.bar)
     }
+
+    private func errorBanner(_ error: AnnotationStoreError) -> some View {
+        HStack(spacing: 8) {
+            Text(annotationStoreErrorMessage(error))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+            Spacer()
+            if store.hasPendingMutations {
+                Button("Retry") { store.retryPendingMutations() }
+                    .controlSize(.small)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Color.orange.opacity(0.08))
+    }
+
+    private func createSession() {
+        let sessions = store.sessions
+        guard
+            let draft = SessionDialogs.requestNewSessionName(sessions: sessions),
+            let name = SessionDialogs.validateForEnqueue(
+                draft,
+                excluding: nil,
+                sessions: store.sessions
+            )
+        else { return }
+        store.mutate(.createSession(Session(name: name)))
+    }
+
+    private func renameSession(sessionID: UUID) {
+        let sessions = store.sessions
+        guard
+            let draft = SessionDialogs.requestRenamedSessionName(
+                sessionID: sessionID,
+                sessions: sessions
+            ),
+            let name = SessionDialogs.validateForEnqueue(
+                draft,
+                excluding: sessionID,
+                sessions: store.sessions
+            )
+        else { return }
+        store.mutate(.renameSession(sessionID: sessionID, name: name))
+    }
+
+    private func deleteSession(sessionID: UUID) {
+        let sessions = store.sessions
+        guard SessionDialogs.confirmsDelete(
+            sessionID: sessionID,
+            sessions: sessions,
+            lastCleared: store.lastCleared
+        ) else { return }
+        store.mutate(.deleteSession(sessionID: sessionID))
+    }
+
 }
 
 private struct StackRow: View {
