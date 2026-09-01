@@ -19,9 +19,9 @@ final class CaptureController {
     private var voiceModel: VoiceCaptureModel?
     private var voiceKeyMonitor: Any?
     private var previousApp: NSRunningApplication?
-    private var voiceKeyIsHeld = false
-    private var voiceStartTask: Task<Void, Never>?
-    private var voiceFinishTask: Task<Void, Never>?
+    private var voiceStartupTask: Task<Void, Never>?
+    private var voiceTranscriptionTask: Task<Void, Never>?
+    private var voiceFailureTask: Task<Void, Never>?
 
     private enum Lifecycle {
         case awaitingStore
@@ -54,7 +54,7 @@ final class CaptureController {
         }
     }
 
-    var isOpen: Bool { panel != nil || voicePanel != nil }
+    var isOpen: Bool { panel != nil || voiceModel != nil }
 
     func beginCapture() {
         guard let store else { NSSound.beep(); return }
@@ -85,33 +85,56 @@ final class CaptureController {
         }
 
         let context = AnnotationCaptureContext(sessionID: store.currentSessionID)
-        voiceKeyIsHeld = true
+        let model = VoiceCaptureModel(context: context)
+
+        // Install the lifecycle owner before selection capture. The clipboard
+        // fallback runs the main run loop, so the matching key-up can arrive
+        // while this synchronous call is still in progress.
+        voiceModel = model
         previousApp = NSWorkspace.shared.frontmostApplication
 
-        // Start before the selection fallback. That fallback must wait for the
-        // physical modifiers to lift before it can copy text from some apps.
+        var recordingStartError: Error?
         if VoiceAnnotationService.shared.isMicrophoneAuthorized {
+            let identity = model.identity
             do {
                 try VoiceAnnotationService.shared.startRecording()
+                guard isCurrentVoiceCapture(model, identity: identity),
+                      case .selecting = model.phase
+                else {
+                    VoiceAnnotationService.shared.discardRecording()
+                    return
+                }
+                _ = model.recordingStarted()
             } catch {
-                Diag.log("voice recording failed: \(error.localizedDescription)")
+                recordingStartError = error
             }
         }
+
         let captured = SelectionCapture.capture()
-        presentVoice(context.target(captured: captured))
-        if VoiceAnnotationService.shared.isRecording {
-            voiceModel?.state = .recording
-        } else {
-            startVoiceRecording()
+        guard voiceModel === model, model.phase != .dismissed else {
+            VoiceAnnotationService.shared.discardRecording()
+            return
+        }
+
+        model.setCapturedSelection(captured, context: context)
+        presentVoice(model)
+        let selectionAction = model.selectionCompleted()
+
+        if let recordingStartError {
+            Diag.log("voice recording failed: \(recordingStartError.localizedDescription)")
+            showVoiceFailure("Couldn’t start recording.", for: model)
+            return
+        }
+
+        runVoiceAction(selectionAction, for: model)
+        if case .starting = model.phase {
+            startVoiceRecording(for: model)
         }
     }
 
     func endVoiceCapture() {
-        voiceKeyIsHeld = false
-        guard voicePanel != nil, voiceModel != nil else { return }
-
-        guard VoiceAnnotationService.shared.isRecording else { return }
-        finishVoiceCapture()
+        guard let model = voiceModel else { return }
+        runVoiceAction(model.release(), for: model)
     }
 
     private func present(_ target: AnnotationCaptureTarget) {
@@ -161,10 +184,10 @@ final class CaptureController {
         panel.makeKeyAndOrderFront(nil)
     }
 
-    private func presentVoice(_ target: AnnotationCaptureTarget) {
-        let captured = target.captured
+    private func presentVoice(_ model: VoiceCaptureModel) {
+        guard let captured = model.captured else { return }
         let panel = CapturePanel(
-            contentRect: NSRect(x: 0, y: 0, width: 190, height: 66),
+            contentRect: NSRect(x: 0, y: 0, width: 220, height: 58),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -180,8 +203,6 @@ final class CaptureController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.animationBehavior = .utilityWindow
 
-        let model = VoiceCaptureModel(target: target)
-        voiceModel = model
         panel.contentView = NSHostingView(rootView: VoiceCaptureView(model: model))
         positionVoiceOverlay(panel, for: captured)
         voicePanel = panel
@@ -269,7 +290,7 @@ final class CaptureController {
         voiceKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self, let panel = self.voicePanel, event.window === panel else { return event }
             if event.keyCode == 53 { // escape
-                self.dismissVoice(returnFocus: true)
+                self.teardownVoice(returnFocus: true)
                 return nil
             }
             return event
@@ -278,98 +299,188 @@ final class CaptureController {
 
     // MARK: - Finish
 
-    private func startVoiceRecording() {
-        guard let voiceModel else { return }
-        voiceModel.state = .idle
-        voiceStartTask?.cancel()
+    private func startVoiceRecording(for model: VoiceCaptureModel) {
+        guard isCurrentVoiceCapture(model),
+              case .starting = model.phase
+        else { return }
+
+        voiceStartupTask?.cancel()
 
         if VoiceAnnotationService.shared.isMicrophoneAuthorized {
-            do {
-                try VoiceAnnotationService.shared.startRecording()
-                voiceModel.state = .recording
-            } catch {
-                voiceModel.state = .failed(error.localizedDescription)
-                Diag.log("voice recording failed: \(error.localizedDescription)")
-            }
+            startAuthorizedVoiceRecording(for: model)
             return
         }
 
-        voiceStartTask = Task { [weak self, weak voiceModel] in
-            guard let self, let voiceModel else { return }
-            guard await VoiceAnnotationService.shared.requestMicrophoneAccess() else {
-                guard self.voiceModel === voiceModel, self.voicePanel != nil else { return }
-                voiceModel.state = .failed("Microphone access is not allowed.")
-                return
-            }
-            guard !Task.isCancelled, self.voiceModel === voiceModel, self.voicePanel != nil else { return }
-            guard self.voiceKeyIsHeld else {
-                voiceModel.state = .failed("Hold the voice shortcut again to record.")
-                return
-            }
+        let identity = model.identity
+        voiceStartupTask = Task { [weak self, weak model] in
+            guard let self, let model else { return }
+            let allowed = await VoiceAnnotationService.shared.requestMicrophoneAccess()
+            guard !Task.isCancelled,
+                  self.isCurrentVoiceCapture(model, identity: identity),
+                  case .starting = model.phase
+            else { return }
+            self.voiceStartupTask = nil
 
-            do {
-                try VoiceAnnotationService.shared.startRecording()
-                guard self.voiceModel === voiceModel, self.voicePanel != nil else {
-                    VoiceAnnotationService.shared.discardRecording()
-                    return
-                }
-                voiceModel.state = .recording
-            } catch {
-                guard self.voiceModel === voiceModel, self.voicePanel != nil else { return }
-                voiceModel.state = .failed(error.localizedDescription)
-                Diag.log("voice recording failed: \(error.localizedDescription)")
+            guard allowed else {
+                self.showVoiceFailure("Microphone access is not allowed.", for: model)
+                return
             }
+            self.startAuthorizedVoiceRecording(for: model)
         }
     }
 
-    private func finishVoiceCapture() {
-        guard let voiceModel, voicePanel != nil, VoiceAnnotationService.shared.isRecording else { return }
-        voiceModel.state = .transcribing
-        voiceFinishTask?.cancel()
+    private func startAuthorizedVoiceRecording(for model: VoiceCaptureModel) {
+        guard isCurrentVoiceCapture(model),
+              case .starting = model.phase
+        else { return }
 
-        voiceFinishTask = Task { [weak self, weak voiceModel] in
-            guard let self, let voiceModel else { return }
+        let identity = model.identity
+        do {
+            try VoiceAnnotationService.shared.startRecording()
+            guard isCurrentVoiceCapture(model, identity: identity),
+                  case .starting = model.phase
+            else {
+                VoiceAnnotationService.shared.discardRecording()
+                return
+            }
+            runVoiceAction(model.recordingStarted(), for: model)
+        } catch {
+            Diag.log("voice recording failed: \(error.localizedDescription)")
+            showVoiceFailure("Couldn’t start recording.", for: model)
+        }
+    }
 
-            // This tells the user why their first annotation takes longer.
-            if !(await VoiceAnnotationService.shared.isVoiceModelReady()) {
-                guard self.voiceModel === voiceModel, self.voicePanel != nil else { return }
-                voiceModel.state = .preparingModel
+    private func runVoiceAction(_ action: VoiceCaptureAction, for model: VoiceCaptureModel) {
+        guard voiceModel === model else { return }
+        switch action {
+        case .beginTranscription:
+            guard isCurrentVoiceCapture(model) else { return }
+            finishVoiceCapture(for: model)
+        case .dismiss:
+            teardownVoice(returnFocus: true)
+        case .none, .saveAndDismiss:
+            break
+        }
+    }
+
+    private func finishVoiceCapture(for model: VoiceCaptureModel) {
+        guard isCurrentVoiceCapture(model),
+              case .transcribing = model.phase,
+              voiceTranscriptionTask == nil
+        else { return }
+
+        voiceStartupTask?.cancel()
+        voiceStartupTask = nil
+        let identity = model.identity
+
+        voiceTranscriptionTask = Task { [weak self, weak model] in
+            guard let self, let model else { return }
+
+            let modelIsReady = await VoiceAnnotationService.shared.isVoiceModelReady()
+            guard !Task.isCancelled,
+                  self.isCurrentVoiceCapture(model, identity: identity),
+                  case .transcribing = model.phase
+            else { return }
+            if !modelIsReady {
+                model.modelPreparationBegan()
             }
 
             do {
                 let transcript = try await VoiceAnnotationService.shared.stopAndTranscribe()
-                guard self.voiceModel === voiceModel, self.voicePanel != nil else { return }
-                guard !transcript.isEmpty else {
-                    voiceModel.state = .failed("No speech was found.")
+                guard !Task.isCancelled,
+                      self.isCurrentVoiceCapture(model, identity: identity),
+                      case .transcribing = model.phase,
+                      let target = model.target,
+                      self.target(target, matches: identity)
+                else { return }
+                guard let note = transcript.nonblank else {
+                    self.voiceTranscriptionTask = nil
+                    self.showVoiceFailure("No speech was found.", for: model)
                     return
                 }
 
                 guard let annotation = CaptureAnnotationPolicy.annotation(
-                    for: voiceModel.target,
-                    note: transcript
+                    for: target,
+                    note: note
                 ) else {
-                    voiceModel.state = .failed("No speech was found.")
+                    self.voiceTranscriptionTask = nil
+                    self.showVoiceFailure("No speech was found.", for: model)
                     return
                 }
-                guard let currentTarget = self.voiceModel?.target,
-                      currentTarget.captureID == voiceModel.target.captureID,
-                      currentTarget.annotationID == voiceModel.target.annotationID,
-                      currentTarget.sessionID == voiceModel.target.sessionID,
-                      let store = self.store,
-                      !store.isTornDown
-                else { return }
+                guard let store = self.store, !store.isTornDown else {
+                    self.teardownVoice(returnFocus: true)
+                    return
+                }
+                guard store.sessions.contains(where: { $0.id == identity.sessionID }) else {
+                    self.voiceTranscriptionTask = nil
+                    self.showVoiceFailure("The original session is no longer available.", for: model)
+                    return
+                }
+                guard model.transcriptionSucceeded() == .saveAndDismiss else { return }
+
+                self.voiceTranscriptionTask = nil
                 store.mutate(.addAnnotation(
-                    sessionID: voiceModel.target.sessionID,
+                    sessionID: identity.sessionID,
                     annotation: annotation
                 ))
-                Diag.log("saved voice annotation, note=\(transcript.prefix(30).debugDescription)")
-                self.dismissVoice(returnFocus: true)
+                Diag.log("saved voice annotation, note=\(note.prefix(30).debugDescription)")
+                self.teardownVoice(returnFocus: true)
+            } catch is CancellationError {
+                // The one teardown path owns cleanup after cancellation.
             } catch {
-                guard self.voiceModel === voiceModel, self.voicePanel != nil else { return }
-                voiceModel.state = .failed(error.localizedDescription)
+                guard !Task.isCancelled,
+                      self.isCurrentVoiceCapture(model, identity: identity),
+                      case .transcribing = model.phase
+                else { return }
+                self.voiceTranscriptionTask = nil
                 Diag.log("voice transcription failed: \(error.localizedDescription)")
+                self.showVoiceFailure("Couldn’t transcribe that audio.", for: model)
             }
         }
+    }
+
+    private func showVoiceFailure(_ message: String, for model: VoiceCaptureModel) {
+        guard isCurrentVoiceCapture(model) else { return }
+        let failureID = UUID()
+        model.fail(message: message, failureID: failureID)
+
+        guard case let .failed(_, currentFailureID) = model.phase,
+              currentFailureID == failureID
+        else { return }
+
+        voiceStartupTask?.cancel()
+        voiceStartupTask = nil
+        voiceTranscriptionTask?.cancel()
+        voiceTranscriptionTask = nil
+        VoiceAnnotationService.shared.discardRecording()
+        voiceFailureTask?.cancel()
+
+        let identity = model.identity
+        voiceFailureTask = Task { [weak self, weak model] in
+            try? await Task.sleep(for: .seconds(2.5))
+            guard !Task.isCancelled,
+                  let self, let model,
+                  self.isCurrentVoiceCapture(model, identity: identity)
+            else { return }
+            self.voiceFailureTask = nil
+            self.runVoiceAction(model.failureTimeout(failureID: failureID), for: model)
+        }
+    }
+
+    private func isCurrentVoiceCapture(
+        _ model: VoiceCaptureModel,
+        identity: VoiceCaptureIdentity? = nil
+    ) -> Bool {
+        guard voiceModel === model, model.phase != .dismissed else { return false }
+        if let identity, model.identity != identity { return false }
+        if let target = model.target, !self.target(target, matches: model.identity) { return false }
+        return true
+    }
+
+    private func target(_ target: AnnotationCaptureTarget, matches identity: VoiceCaptureIdentity) -> Bool {
+        target.captureID == identity.captureID
+            && target.annotationID == identity.annotationID
+            && target.sessionID == identity.sessionID
     }
 
     /// Saves the panel that is actually on screen. Nothing else can trigger it.
@@ -408,13 +519,17 @@ final class CaptureController {
         previousApp = nil
     }
 
-    private func dismissVoice(returnFocus: Bool) {
-        voiceStartTask?.cancel()
-        voiceStartTask = nil
-        voiceFinishTask?.cancel()
-        voiceFinishTask = nil
+    /// The only voice teardown path. It is safe to call more than once.
+    private func teardownVoice(returnFocus: Bool) {
+        _ = voiceModel?.cancel()
+        voiceStartupTask?.cancel()
+        voiceStartupTask = nil
+        voiceTranscriptionTask?.cancel()
+        voiceTranscriptionTask = nil
+        voiceFailureTask?.cancel()
+        voiceFailureTask = nil
         VoiceAnnotationService.shared.discardRecording()
-        voiceKeyIsHeld = false
+
         if let voiceKeyMonitor { NSEvent.removeMonitor(voiceKeyMonitor) }
         voiceKeyMonitor = nil
         voicePanel?.orderOut(nil)
@@ -434,7 +549,7 @@ final class CaptureController {
         if case .tornDown = lifecycle { return }
         lifecycle = .tornDown
         dismiss(returnFocus: false)
-        dismissVoice(returnFocus: false)
+        teardownVoice(returnFocus: false)
     }
 }
 

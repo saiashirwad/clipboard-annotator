@@ -80,7 +80,6 @@ enum CaptureAnnotationPolicy {
 final class CaptureModel {
     var note = ""
     var expanded = false
-    var voiceState: VoiceState = .idle
 
     let target: AnnotationCaptureTarget
     let stackCount: Int
@@ -91,12 +90,4 @@ final class CaptureModel {
         self.target = target
         self.stackCount = stackCount
     }
-}
-
-enum VoiceState: Equatable {
-    case idle
-    case recording
-    case preparingModel
-    case transcribing
-    case failed(String)
 }

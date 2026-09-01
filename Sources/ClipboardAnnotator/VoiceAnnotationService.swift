@@ -91,12 +91,16 @@ final class VoiceAnnotationService {
     /// Stops the microphone before starting transcription, so its use stays
     /// limited to the time that the shortcut was held.
     func stopAndTranscribe() async throws -> String {
+        try Task.checkCancellation()
         let url = try stopRecording()
         defer { try? FileManager.default.removeItem(at: url) }
 
+        try Task.checkCancellation()
         let modelIsLoaded = await transcriber.isLoaded()
+        try Task.checkCancellation()
         Diag.log(modelIsLoaded ? "voice transcription started" : "voice model download started")
         let transcript = try await transcriber.transcribe(url: url)
+        try Task.checkCancellation()
         return transcript.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
@@ -137,9 +141,11 @@ private enum VoiceAnnotationError: LocalizedError {
 }
 
 private actor LocalVoiceTranscriber {
-    private var manager: AsrManager?
+    private let preparation = SharedAsyncPreparation<AsrManager>()
 
-    func isLoaded() -> Bool { manager != nil }
+    func isLoaded() async -> Bool {
+        await preparation.isPrepared()
+    }
 
     func prepare() async throws {
         _ = try await transcriptionManager()
@@ -154,12 +160,10 @@ private actor LocalVoiceTranscriber {
     }
 
     private func transcriptionManager() async throws -> AsrManager {
-        if let manager { return manager }
-
-        // Parakeet TDT v3 is Hex's default, multilingual, on-device model.
-        let models = try await AsrModels.downloadAndLoad(version: .v3)
-        let manager = AsrManager(config: .init(), models: models)
-        self.manager = manager
-        return manager
+        try await preparation.value {
+            // Parakeet TDT v3 is Hex's default, multilingual, on-device model.
+            let models = try await AsrModels.downloadAndLoad(version: .v3)
+            return AsrManager(config: .init(), models: models)
+        }
     }
 }
