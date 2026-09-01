@@ -287,6 +287,80 @@ final class AnnotationStoreTests: XCTestCase {
         XCTAssertEqual(callbackCount, 2)
     }
 
+    func testNoteAndProvenanceOnlyUpdatesPreserveEachOtherInBothQueueOrders() async throws {
+        let base = annotation(note: "Original note")
+        let original = StoreDocument(
+            sessions: [Session(id: sessionID, name: "First", entries: [base], createdAt: now)],
+            currentSessionID: sessionID
+        )
+        let enriched = Provenance(
+            application: base.provenance.application,
+            windowTitle: "Focused window",
+            url: URL(string: "https://example.com")
+        )
+
+        for noteFirst in [true, false] {
+            let store = try await AnnotationStore(persistence: StorePersistence(
+                load: { original },
+                commit: { _ in }
+            ))
+            let noteMutation = SessionDocumentMutation.updateAnnotationNote(
+                sessionID: sessionID,
+                annotationID: base.id,
+                note: "Edited note"
+            )
+            let provenanceMutation = SessionDocumentMutation.updateAnnotationProvenance(
+                sessionID: sessionID,
+                annotationID: base.id,
+                expectedApplication: base.provenance.application,
+                provenance: enriched
+            )
+            if noteFirst {
+                store.mutate(noteMutation)
+                store.mutate(provenanceMutation)
+            } else {
+                store.mutate(provenanceMutation)
+                store.mutate(noteMutation)
+            }
+            await store.waitForIdle()
+
+            XCTAssertEqual(store.currentEntries.first?.note, "Edited note")
+            XCTAssertEqual(store.currentEntries.first?.provenance, enriched)
+            XCTAssertEqual(store.currentEntries.first?.subject, base.subject)
+            XCTAssertEqual(store.currentEntries.first?.createdAt, base.createdAt)
+            store.teardown()
+        }
+    }
+
+    func testClearBeforeLateProvenanceThenUndoRestoresEnrichment() async throws {
+        let original = document()
+        let store = try await AnnotationStore(persistence: StorePersistence(
+            load: { original },
+            commit: { _ in }
+        ))
+        let base = annotation(note: "Keep")
+        let enriched = Provenance(
+            application: base.provenance.application,
+            windowTitle: "Focused window"
+        )
+
+        store.mutate(.addAnnotation(sessionID: sessionID, annotation: base))
+        store.mutate(.clearSession(sessionID: sessionID))
+        store.mutate(.updateAnnotationProvenance(
+            sessionID: sessionID,
+            annotationID: base.id,
+            expectedApplication: base.provenance.application,
+            provenance: enriched
+        ))
+        store.mutate(.undoClear)
+        await store.waitForIdle()
+
+        XCTAssertEqual(store.currentEntries.count, 1)
+        XCTAssertEqual(store.currentEntries.first?.id, base.id)
+        XCTAssertEqual(store.currentEntries.first?.provenance, enriched)
+        store.teardown()
+    }
+
     func testTeardownReleasesWaitersWhenPersistenceIgnoresCancellation() async throws {
         let original = document()
         let commitStarted = expectation(description: "commit started")

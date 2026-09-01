@@ -140,10 +140,11 @@ struct StackView: View {
                 StackRow(
                     index: index,
                     entry: entry,
-                    onUpdate: { updated in
-                        store.mutate(.updateAnnotation(
+                    onNoteChanged: { note in
+                        store.mutate(.updateAnnotationNote(
                             sessionID: renderedSessionID,
-                            annotation: updated
+                            annotationID: entry.id,
+                            note: note
                         ))
                     },
                     onDelete: {
@@ -314,7 +315,7 @@ struct StackView: View {
 private struct StackRow: View {
     let index: Int
     let entry: ClipboardAnnotatorDomain.Annotation
-    let onUpdate: (ClipboardAnnotatorDomain.Annotation) -> Void
+    let onNoteChanged: (String) -> Void
     let onDelete: () -> Void
 
     @State private var hovering = false
@@ -367,9 +368,7 @@ private struct StackRow: View {
                 text: Binding(
                     get: { entry.note },
                     set: { newValue in
-                        var updated = entry
-                        updated.note = newValue
-                        onUpdate(updated)
+                        onNoteChanged(newValue)
                     }
                 ),
                 axis: .vertical

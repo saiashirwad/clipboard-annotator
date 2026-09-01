@@ -8,6 +8,13 @@ public enum SessionDocumentMutation: Equatable, Sendable {
     case deleteSession(sessionID: UUID)
     case addAnnotation(sessionID: UUID, annotation: Annotation)
     case updateAnnotation(sessionID: UUID, annotation: Annotation)
+    case updateAnnotationNote(sessionID: UUID, annotationID: UUID, note: String)
+    case updateAnnotationProvenance(
+        sessionID: UUID,
+        annotationID: UUID,
+        expectedApplication: ApplicationIdentity,
+        provenance: Provenance
+    )
     case removeAnnotation(sessionID: UUID, annotationID: UUID)
 
     /// Moves an annotation to a final zero-based index in its session.
@@ -171,6 +178,47 @@ public enum SessionDocumentMutations {
                 return .noOp
             }
             document.sessions[sessionIndex].entries[annotationIndex] = annotation
+
+        case let .updateAnnotationNote(sessionID, annotationID, note):
+            guard let sessionIndex = sessionIndex(sessionID, in: document),
+                  let annotationIndex = document.sessions[sessionIndex].entries.firstIndex(where: {
+                      $0.id == annotationID
+                  })
+            else { return .noOp }
+            guard document.sessions[sessionIndex].entries[annotationIndex].note != note else {
+                return .noOp
+            }
+            document.sessions[sessionIndex].entries[annotationIndex].note = note
+
+        case let .updateAnnotationProvenance(
+            sessionID,
+            annotationID,
+            expectedApplication,
+            provenance
+        ):
+            guard provenance.application == expectedApplication,
+                  let sessionIndex = sessionIndex(sessionID, in: document)
+            else { return .noOp }
+
+            if let annotationIndex = document.sessions[sessionIndex].entries.firstIndex(where: {
+                $0.id == annotationID
+            }) {
+                guard document.sessions[sessionIndex].entries[annotationIndex].provenance.application
+                        == expectedApplication,
+                      document.sessions[sessionIndex].entries[annotationIndex].provenance != provenance
+                else { return .noOp }
+                document.sessions[sessionIndex].entries[annotationIndex].provenance = provenance
+            } else {
+                guard document.lastCleared?.sessionID == sessionID,
+                      let annotationIndex = document.lastCleared?.entries.firstIndex(where: {
+                          $0.id == annotationID
+                      }),
+                      document.lastCleared?.entries[annotationIndex].provenance.application
+                        == expectedApplication,
+                      document.lastCleared?.entries[annotationIndex].provenance != provenance
+                else { return .noOp }
+                document.lastCleared?.entries[annotationIndex].provenance = provenance
+            }
 
         case let .removeAnnotation(sessionID, annotationID):
             guard let sessionIndex = sessionIndex(sessionID, in: document) else {

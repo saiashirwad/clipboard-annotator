@@ -1,3 +1,4 @@
+import AppKit
 import ClipboardAnnotatorDomain
 import Foundation
 import XCTest
@@ -31,6 +32,7 @@ final class RuntimeCutoverTests: XCTestCase {
             text: " quote ",
             appName: "Reader",
             appBundleID: "com.example.reader",
+            processIdentifier: 123,
             screenRect: nil
         ))
 
@@ -41,12 +43,32 @@ final class RuntimeCutoverTests: XCTestCase {
         XCTAssertEqual(target.captureID, captureID)
         XCTAssertEqual(target.annotationID, annotationID)
         XCTAssertEqual(target.createdAt, createdAt)
+        XCTAssertEqual(target.captured.processIdentifier, 123)
         XCTAssertEqual(annotation.id, annotationID)
         XCTAssertEqual(annotation.createdAt, createdAt)
         XCTAssertEqual(annotation.note, "My note")
         XCTAssertEqual(annotation.provenance.application.name, "Reader")
         XCTAssertEqual(annotation.provenance.application.bundleID, "com.example.reader")
         XCTAssertEqual(annotation.subject, .selection(quote: " quote "))
+    }
+
+    @MainActor
+    func testCapturePanelCloseHandlerIsOneShot() {
+        let panel = CapturePanel(
+            contentRect: .zero,
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        panel.isReleasedWhenClosed = false
+        var closeCount = 0
+        panel.onClose = { closeCount += 1 }
+
+        panel.performClose(nil)
+        panel.performClose(nil)
+
+        XCTAssertEqual(closeCount, 1)
+        XCTAssertNil(panel.onClose)
     }
 
     func testOutputProfileProjectionPreservesCurrentToggles() {

@@ -6,8 +6,19 @@ import SwiftUI
 /// hide when another app takes over. That is what lets Wispr Flow, Hex, or any
 /// other dictation tool run on top of it while the note field stays alive.
 final class CapturePanel: NSPanel {
+    var onClose: (() -> Void)?
+
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    override func performClose(_ sender: Any?) {
+        guard let onClose else {
+            super.performClose(sender)
+            return
+        }
+        self.onClose = nil
+        onClose()
+    }
 }
 
 @MainActor
@@ -22,6 +33,11 @@ final class CaptureController {
     private var voiceStartupTask: Task<Void, Never>?
     private var voiceTranscriptionTask: Task<Void, Never>?
     private var voiceFailureTask: Task<Void, Never>?
+    private let provenanceProbe: ProvenanceProbe
+    private lazy var provenanceWork = PendingProvenanceWorkOwner(
+        probe: provenanceProbe,
+        lateUpdate: { [weak self] mutation in self?.applyLateProvenance(mutation) }
+    )
 
     private enum Lifecycle {
         case awaitingStore
@@ -39,8 +55,12 @@ final class CaptureController {
         return store
     }
 
-    init(settings: AppSettings) {
+    init(
+        settings: AppSettings,
+        provenanceProbe: ProvenanceProbe = .live()
+    ) {
         self.settings = settings
+        self.provenanceProbe = provenanceProbe
     }
 
     func configure(store: AnnotationStore) {
@@ -70,7 +90,9 @@ final class CaptureController {
         previousApp = NSWorkspace.shared.frontmostApplication
         let context = AnnotationCaptureContext(sessionID: store.currentSessionID)
         let captured = SelectionCapture.capture()
-        present(context.target(captured: captured))
+        let target = context.target(captured: captured)
+        provenanceWork.start(for: target)
+        present(target)
     }
 
     /// Starts a capture and a microphone recording together. `endVoiceCapture`
@@ -117,6 +139,9 @@ final class CaptureController {
         }
 
         model.setCapturedSelection(captured, context: context)
+        if let target = model.target {
+            provenanceWork.start(for: target)
+        }
         presentVoice(model)
         let selectionAction = model.selectionCompleted()
 
@@ -145,6 +170,7 @@ final class CaptureController {
             backing: .buffered,
             defer: false
         )
+        panel.onClose = { [weak self] in self?.dismiss(returnFocus: true) }
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
         panel.standardWindowButton(.closeButton)?.isHidden = true
@@ -192,6 +218,7 @@ final class CaptureController {
             backing: .buffered,
             defer: false
         )
+        panel.onClose = { [weak self] in self?.teardownVoice(returnFocus: true) }
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
@@ -418,12 +445,16 @@ final class CaptureController {
                 }
                 guard model.transcriptionSucceeded() == .saveAndDismiss else { return }
 
+                let savedAnnotation = self.provenanceWork.annotationForSave(
+                    annotation,
+                    target: target
+                )
                 self.voiceTranscriptionTask = nil
                 store.mutate(.addAnnotation(
                     sessionID: identity.sessionID,
-                    annotation: annotation
+                    annotation: savedAnnotation
                 ))
-                Diag.log("saved voice annotation, note=\(note.prefix(30).debugDescription)")
+                Diag.log("saved voice annotation")
                 self.teardownVoice(returnFocus: true)
             } catch is CancellationError {
                 // The one teardown path owns cleanup after cancellation.
@@ -496,17 +527,25 @@ final class CaptureController {
             NSSound.beep()
             return
         }
+        let savedAnnotation = provenanceWork.annotationForSave(
+            annotation,
+            target: model.target
+        )
         store.mutate(.addAnnotation(
             sessionID: model.target.sessionID,
-            annotation: annotation
+            annotation: savedAnnotation
         ))
-        Diag.log("saved annotation, note=\(annotation.note.prefix(30).debugDescription) quote=\(model.captured.text.count) chars")
+        Diag.log("saved annotation")
         dismiss(returnFocus: true)
     }
 
     func dismiss(returnFocus: Bool) {
+        if let target = model?.target {
+            provenanceWork.cancelBeforeSave(for: target)
+        }
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         keyMonitor = nil
+        panel?.onClose = nil
         panel?.orderOut(nil)
         panel?.contentView = nil
         panel = nil
@@ -521,6 +560,9 @@ final class CaptureController {
 
     /// The only voice teardown path. It is safe to call more than once.
     private func teardownVoice(returnFocus: Bool) {
+        if let target = voiceModel?.target {
+            provenanceWork.cancelBeforeSave(for: target)
+        }
         _ = voiceModel?.cancel()
         voiceStartupTask?.cancel()
         voiceStartupTask = nil
@@ -532,6 +574,7 @@ final class CaptureController {
 
         if let voiceKeyMonitor { NSEvent.removeMonitor(voiceKeyMonitor) }
         voiceKeyMonitor = nil
+        voicePanel?.onClose = nil
         voicePanel?.orderOut(nil)
         voicePanel?.contentView = nil
         voicePanel = nil
@@ -544,10 +587,32 @@ final class CaptureController {
         previousApp = nil
     }
 
+    private func applyLateProvenance(_ mutation: SessionDocumentMutation) {
+        guard let store, !store.isTornDown,
+              case let .updateAnnotationProvenance(
+                  sessionID,
+                  annotationID,
+                  expectedApplication,
+                  provenance
+              ) = mutation,
+              provenance.application == expectedApplication,
+              let session = store.sessions.first(where: { $0.id == sessionID })
+        else { return }
+
+        if let existing = session.entries.first(where: { $0.id == annotationID }),
+           existing.provenance.application != expectedApplication {
+            return
+        }
+        // A missing live entry can still be an in-flight add or the exact entry
+        // in lastCleared. The Domain mutation resolves both without resurrection.
+        store.mutate(mutation)
+    }
+
     /// Cancels every task and closes every panel owned by this controller.
     func teardown() {
         if case .tornDown = lifecycle { return }
         lifecycle = .tornDown
+        provenanceWork.teardown()
         dismiss(returnFocus: false)
         teardownVoice(returnFocus: false)
     }

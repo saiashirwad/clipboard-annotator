@@ -31,6 +31,6 @@
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>NSAppleEventsUsageDescription</key>
-    <string>Clipboard Annotator reads the text you have highlighted in other apps.</string>
+    <string>Clipboard Annotator reads the active Helium tab title and address to record where an annotation came from.</string>
 </dict>
 </plist>

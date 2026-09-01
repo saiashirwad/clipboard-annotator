@@ -5,6 +5,7 @@ struct CapturedSelection {
     var text: String
     var appName: String?
     var appBundleID: String?
+    var processIdentifier: pid_t = 0
     var screenRect: CGRect?
 }
 
@@ -34,6 +35,7 @@ enum SelectionCapture {
             text: text,
             appName: app?.localizedName,
             appBundleID: app?.bundleIdentifier,
+            processIdentifier: app?.processIdentifier ?? 0,
             screenRect: rect
         )
     }
