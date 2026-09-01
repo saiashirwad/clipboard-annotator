@@ -1,4 +1,5 @@
 import AppKit
+import ClipboardAnnotatorDomain
 import SwiftUI
 
 /// A floating panel that can take keyboard focus and, crucially, does **not**
@@ -11,8 +12,6 @@ final class CapturePanel: NSPanel {
 
 @MainActor
 final class CaptureController {
-    static let shared = CaptureController()
-
     private var panel: CapturePanel?
     private var model: CaptureModel?
     private var keyMonitor: Any?
@@ -24,14 +23,41 @@ final class CaptureController {
     private var voiceStartTask: Task<Void, Never>?
     private var voiceFinishTask: Task<Void, Never>?
 
+    private enum Lifecycle {
+        case awaitingStore
+        case ready(AnnotationStore)
+        case tornDown
+    }
+
     private let panelWidth: CGFloat = 460
     private let panelHeight: CGFloat = 260
+    private let settings: AppSettings
+    private var lifecycle: Lifecycle = .awaitingStore
 
-    private init() {}
+    private var store: AnnotationStore? {
+        guard case let .ready(store) = lifecycle else { return nil }
+        return store
+    }
+
+    init(settings: AppSettings) {
+        self.settings = settings
+    }
+
+    func configure(store: AnnotationStore) {
+        switch lifecycle {
+        case .awaitingStore:
+            lifecycle = .ready(store)
+        case let .ready(existingStore):
+            precondition(existingStore === store, "CaptureController cannot change stores")
+        case .tornDown:
+            break
+        }
+    }
 
     var isOpen: Bool { panel != nil || voicePanel != nil }
 
     func beginCapture() {
+        guard let store else { NSSound.beep(); return }
         if isOpen {
             // Second press while open: just bring it back to the front.
             NSApp.activate(ignoringOtherApps: true)
@@ -42,13 +68,15 @@ final class CaptureController {
         guard PermissionCheck.ensureAccessibility() else { return }
 
         previousApp = NSWorkspace.shared.frontmostApplication
+        let context = AnnotationCaptureContext(sessionID: store.currentSessionID)
         let captured = SelectionCapture.capture()
-        present(captured)
+        present(context.target(captured: captured))
     }
 
     /// Starts a capture and a microphone recording together. `endVoiceCapture`
     /// is called by the matching global-hotkey release event.
     func beginVoiceCapture() {
+        guard let store else { NSSound.beep(); return }
         guard PermissionCheck.ensureAccessibility() else { return }
 
         if isOpen {
@@ -56,6 +84,7 @@ final class CaptureController {
             return
         }
 
+        let context = AnnotationCaptureContext(sessionID: store.currentSessionID)
         voiceKeyIsHeld = true
         previousApp = NSWorkspace.shared.frontmostApplication
 
@@ -69,7 +98,7 @@ final class CaptureController {
             }
         }
         let captured = SelectionCapture.capture()
-        presentVoice(captured)
+        presentVoice(context.target(captured: captured))
         if VoiceAnnotationService.shared.isRecording {
             voiceModel?.state = .recording
         } else {
@@ -85,7 +114,8 @@ final class CaptureController {
         finishVoiceCapture()
     }
 
-    private func present(_ captured: CapturedSelection) {
+    private func present(_ target: AnnotationCaptureTarget) {
+        let captured = target.captured
         let panel = CapturePanel(
             contentRect: NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight),
             styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
@@ -105,7 +135,8 @@ final class CaptureController {
         panel.minSize = NSSize(width: 380, height: 220)
         panel.animationBehavior = .utilityWindow
 
-        let model = CaptureModel(captured: captured, stackCount: AnnotationStore.shared.entries.count)
+        guard let store else { return }
+        let model = CaptureModel(target: target, stackCount: store.currentEntries.count)
         self.model = model
         let view = CaptureView(
             model: model,
@@ -130,7 +161,8 @@ final class CaptureController {
         panel.makeKeyAndOrderFront(nil)
     }
 
-    private func presentVoice(_ captured: CapturedSelection) {
+    private func presentVoice(_ target: AnnotationCaptureTarget) {
+        let captured = target.captured
         let panel = CapturePanel(
             contentRect: NSRect(x: 0, y: 0, width: 190, height: 66),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -148,7 +180,7 @@ final class CaptureController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.animationBehavior = .utilityWindow
 
-        let model = VoiceCaptureModel(captured: captured)
+        let model = VoiceCaptureModel(target: target)
         voiceModel = model
         panel.contentView = NSHostingView(rootView: VoiceCaptureView(model: model))
         positionVoiceOverlay(panel, for: captured)
@@ -312,14 +344,24 @@ final class CaptureController {
                     return
                 }
 
-                AnnotationStore.shared.add(
-                    Annotation(
-                        quote: voiceModel.captured.text,
-                        note: transcript,
-                        sourceApp: voiceModel.captured.appName,
-                        sourceURL: nil
-                    )
-                )
+                guard let annotation = CaptureAnnotationPolicy.annotation(
+                    for: voiceModel.target,
+                    note: transcript
+                ) else {
+                    voiceModel.state = .failed("No speech was found.")
+                    return
+                }
+                guard let currentTarget = self.voiceModel?.target,
+                      currentTarget.captureID == voiceModel.target.captureID,
+                      currentTarget.annotationID == voiceModel.target.annotationID,
+                      currentTarget.sessionID == voiceModel.target.sessionID,
+                      let store = self.store,
+                      !store.isTornDown
+                else { return }
+                store.mutate(.addAnnotation(
+                    sessionID: voiceModel.target.sessionID,
+                    annotation: annotation
+                ))
                 Diag.log("saved voice annotation, note=\(transcript.prefix(30).debugDescription)")
                 self.dismissVoice(returnFocus: true)
             } catch {
@@ -332,26 +374,22 @@ final class CaptureController {
 
     /// Saves the panel that is actually on screen. Nothing else can trigger it.
     private func commit() {
-        guard let model, panel != nil else { return }
-        save(captured: model.captured, note: model.note)
-    }
-
-    private func save(captured: CapturedSelection, note: String) {
-        let trimmedNote = note.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedQuote = captured.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedNote.isEmpty || !trimmedQuote.isEmpty else {
-            dismiss(returnFocus: true)
+        guard let model, panel != nil,
+              let annotation = CaptureAnnotationPolicy.annotation(
+                for: model.target,
+                note: model.note
+              ),
+              let store,
+              !store.isTornDown
+        else {
+            NSSound.beep()
             return
         }
-        AnnotationStore.shared.add(
-            Annotation(
-                quote: captured.text,
-                note: trimmedNote,
-                sourceApp: captured.appName,
-                sourceURL: nil
-            )
-        )
-        Diag.log("saved annotation, note=\(trimmedNote.prefix(30).debugDescription) quote=\(captured.text.count) chars")
+        store.mutate(.addAnnotation(
+            sessionID: model.target.sessionID,
+            annotation: annotation
+        ))
+        Diag.log("saved annotation, note=\(annotation.note.prefix(30).debugDescription) quote=\(model.captured.text.count) chars")
         dismiss(returnFocus: true)
     }
 
@@ -363,7 +401,7 @@ final class CaptureController {
         panel = nil
         model = nil
 
-        if returnFocus, AppSettings.shared.restoreFocusAfterSave,
+        if returnFocus, settings.restoreFocusAfterSave,
            let previousApp, previousApp.bundleIdentifier != Bundle.main.bundleIdentifier {
             previousApp.activate()
         }
@@ -384,11 +422,19 @@ final class CaptureController {
         voicePanel = nil
         voiceModel = nil
 
-        if returnFocus, AppSettings.shared.restoreFocusAfterSave,
+        if returnFocus, settings.restoreFocusAfterSave,
            let previousApp, previousApp.bundleIdentifier != Bundle.main.bundleIdentifier {
             previousApp.activate()
         }
         previousApp = nil
+    }
+
+    /// Cancels every task and closes every panel owned by this controller.
+    func teardown() {
+        if case .tornDown = lifecycle { return }
+        lifecycle = .tornDown
+        dismiss(returnFocus: false)
+        dismissVoice(returnFocus: false)
     }
 }
 

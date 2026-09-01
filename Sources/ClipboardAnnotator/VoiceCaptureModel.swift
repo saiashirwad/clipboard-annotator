@@ -1,12 +1,15 @@
-import Combine
+import Observation
 
 @MainActor
-final class VoiceCaptureModel: ObservableObject {
-    @Published var state: VoiceState = .idle
+@Observable
+final class VoiceCaptureModel {
+    var state: VoiceState = .idle
 
-    let captured: CapturedSelection
+    let target: AnnotationCaptureTarget
 
-    init(captured: CapturedSelection) {
-        self.captured = captured
+    var captured: CapturedSelection { target.captured }
+
+    init(target: AnnotationCaptureTarget) {
+        self.target = target
     }
 }

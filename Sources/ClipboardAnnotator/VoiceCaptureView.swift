@@ -2,7 +2,7 @@ import SwiftUI
 
 /// A short-lived status panel for press-and-hold voice annotations.
 struct VoiceCaptureView: View {
-    @ObservedObject var model: VoiceCaptureModel
+    @Bindable var model: VoiceCaptureModel
 
     var body: some View {
         Group {

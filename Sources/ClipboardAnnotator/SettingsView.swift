@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 struct SettingsView: View {
-    @ObservedObject var settings: AppSettings
+    @Bindable var settings: AppSettings
     @State private var trusted = PermissionCheck.isTrusted
     @State private var microphoneAuthorized = PermissionCheck.isMicrophoneAuthorized
     @State private var voiceModelState: VoiceModelState = .checking
@@ -76,11 +76,16 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: 460)
         .fixedSize(horizontal: false, vertical: true)
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            trusted = PermissionCheck.isTrusted
-            microphoneAuthorized = PermissionCheck.isMicrophoneAuthorized
+        .task {
+            await refreshVoiceModelState()
+            for await _ in NotificationCenter.default.notifications(
+                named: NSApplication.didBecomeActiveNotification
+            ) {
+                guard !Task.isCancelled else { return }
+                trusted = PermissionCheck.isTrusted
+                microphoneAuthorized = PermissionCheck.isMicrophoneAuthorized
+            }
         }
-        .task { await refreshVoiceModelState() }
     }
 
     private func shortcutRow(_ title: String, combo: Binding<KeyCombo>) -> some View {

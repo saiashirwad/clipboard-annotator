@@ -33,5 +33,10 @@ let package = Package(
             dependencies: ["ClipboardAnnotatorDomain"],
             path: "Tests/ClipboardAnnotatorDomainTests"
         ),
+        .testTarget(
+            name: "ClipboardAnnotatorTests",
+            dependencies: ["ClipboardAnnotator", "ClipboardAnnotatorDomain"],
+            path: "Tests/ClipboardAnnotatorTests"
+        ),
     ]
 )

@@ -1,27 +1,28 @@
 import AppKit
 import Carbon.HIToolbox
-import Combine
+import Observation
 import ServiceManagement
 
 @MainActor
-final class AppSettings: ObservableObject {
+@Observable
+final class AppSettings {
     static let shared = AppSettings()
 
     private let defaults = UserDefaults.standard
 
-    @Published var captureCombo: KeyCombo { didSet { persist(captureCombo, key: "captureCombo"); onHotKeysChanged?() } }
-    @Published var voiceCaptureCombo: KeyCombo { didSet { persist(voiceCaptureCombo, key: "voiceCaptureCombo"); onHotKeysChanged?() } }
-    @Published var copyCombo: KeyCombo { didSet { persist(copyCombo, key: "copyCombo"); onHotKeysChanged?() } }
-    @Published var stackCombo: KeyCombo { didSet { persist(stackCombo, key: "stackCombo"); onHotKeysChanged?() } }
-    @Published var clearCombo: KeyCombo { didSet { persist(clearCombo, key: "clearCombo"); onHotKeysChanged?() } }
+    var captureCombo: KeyCombo { didSet { persist(captureCombo, key: "captureCombo"); onHotKeysChanged?() } }
+    var voiceCaptureCombo: KeyCombo { didSet { persist(voiceCaptureCombo, key: "voiceCaptureCombo"); onHotKeysChanged?() } }
+    var copyCombo: KeyCombo { didSet { persist(copyCombo, key: "copyCombo"); onHotKeysChanged?() } }
+    var stackCombo: KeyCombo { didSet { persist(stackCombo, key: "stackCombo"); onHotKeysChanged?() } }
+    var clearCombo: KeyCombo { didSet { persist(clearCombo, key: "clearCombo"); onHotKeysChanged?() } }
 
-    @Published var includeSource: Bool { didSet { defaults.set(includeSource, forKey: "includeSource") } }
-    @Published var includeHeading: Bool { didSet { defaults.set(includeHeading, forKey: "includeHeading") } }
-    @Published var clearAfterCopy: Bool { didSet { defaults.set(clearAfterCopy, forKey: "clearAfterCopy") } }
-    @Published var pasteDirectly: Bool { didSet { defaults.set(pasteDirectly, forKey: "pasteDirectly"); onHotKeysChanged?() } }
-    @Published var restoreFocusAfterSave: Bool { didSet { defaults.set(restoreFocusAfterSave, forKey: "restoreFocusAfterSave") } }
+    var includeSource: Bool { didSet { defaults.set(includeSource, forKey: "includeSource") } }
+    var includeHeading: Bool { didSet { defaults.set(includeHeading, forKey: "includeHeading") } }
+    var clearAfterCopy: Bool { didSet { defaults.set(clearAfterCopy, forKey: "clearAfterCopy") } }
+    var pasteDirectly: Bool { didSet { defaults.set(pasteDirectly, forKey: "pasteDirectly"); onHotKeysChanged?() } }
+    var restoreFocusAfterSave: Bool { didSet { defaults.set(restoreFocusAfterSave, forKey: "restoreFocusAfterSave") } }
 
-    @Published var launchAtLogin: Bool {
+    var launchAtLogin: Bool {
         didSet {
             guard launchAtLogin != oldValue else { return }
             do {

@@ -1,5 +1,5 @@
 import AppKit
-import Combine
+import ClipboardAnnotatorDomain
 import SwiftUI
 
 @MainActor
@@ -7,13 +7,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var stackWindow: NSWindow?
     private var settingsWindow: NSWindow?
-    private var cancellables = Set<AnyCancellable>()
+    private enum StoreState {
+        case loading
+        case available(AnnotationStore)
+        case unavailable(String)
+    }
+
+    private var storeState: StoreState = .loading
+    private var bootstrapTask: Task<Void, Never>?
+    private var captureObserver: NSObjectProtocol?
 
     private var flashToken = 0
     private var flashing = false
 
-    private let store = AnnotationStore.shared
-    private let settings = AppSettings.shared
+    private let settings: AppSettings
+    private let captureController: CaptureController
+
+    override init() {
+        let settings = AppSettings.shared
+        self.settings = settings
+        self.captureController = CaptureController(settings: settings)
+        super.init()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Diag.log("=== launch pid=\(ProcessInfo.processInfo.processIdentifier) ===")
@@ -22,19 +37,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings.onHotKeysChanged = { [weak self] in self?.registerHotKeys() }
         registerHotKeys()
 
-        store.$entries
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.refreshStatusItem() }
-            .store(in: &cancellables)
-
-        store.$lastCleared
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.rebuildMenu() }
-            .store(in: &cancellables)
+        bootstrapStore()
 
         // The capture panel needs the app frontmost to take keystrokes, and
         // activating brings every window forward. Get the others out of the way.
-        NotificationCenter.default.addObserver(
+        captureObserver = NotificationCenter.default.addObserver(
             forName: .captureWillPresent, object: nil, queue: nil
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.hideAuxiliaryWindows() }
@@ -44,6 +51,75 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
                 PermissionCheck.ensureAccessibility()
             }
+        }
+    }
+
+    private func bootstrapStore() {
+        bootstrapTask?.cancel()
+        storeState = .loading
+        refreshStatusItem()
+
+        bootstrapTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let store = try await AnnotationStore(
+                    persistence: .live(),
+                    onChange: { [weak self] in self?.storeDidChange() }
+                )
+                guard !Task.isCancelled else {
+                    store.teardown()
+                    return
+                }
+                bootstrapTask = nil
+                storeState = .available(store)
+                captureController.configure(store: store)
+                refreshStatusItem()
+            } catch is CancellationError {
+                // App termination owns cancellation and teardown.
+            } catch {
+                guard !Task.isCancelled else { return }
+                bootstrapTask = nil
+                storeState = .unavailable(error.localizedDescription)
+                Diag.log("store bootstrap failed: \(error)")
+                refreshStatusItem()
+            }
+        }
+    }
+
+    private func storeDidChange() {
+        refreshStatusItem()
+    }
+
+    private var store: AnnotationStore? {
+        guard case let .available(store) = storeState else { return nil }
+        return store
+    }
+
+    private var isStoreAvailable: Bool { store != nil }
+
+    private var unavailableMenuTitle: String {
+        switch storeState {
+        case .loading:
+            return "Loading Annotations…"
+        case .available:
+            return "Nothing Captured Yet"
+        case let .unavailable(message):
+            return "Annotations Unavailable: \(message)"
+        }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        bootstrapTask?.cancel()
+        bootstrapTask = nil
+        captureController.teardown()
+        store?.teardown()
+        if let captureObserver {
+            NotificationCenter.default.removeObserver(captureObserver)
+            self.captureObserver = nil
+        }
+        settings.onHotKeysChanged = nil
+        for name in ["capture", "voiceCapture", "copy", "stack", "clear"] {
+            HotKeyCenter.shared.unregister(name: name)
         }
     }
 
@@ -100,7 +176,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func applyCountTitle() {
-        let count = store.entries.count
+        let count = store?.currentEntries.count ?? 0
         statusItem.button?.title = count > 0 ? " \(count)" : ""
     }
 
@@ -119,22 +195,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func rebuildMenu() {
         let menu = NSMenu()
 
-        let capture = NSMenuItem(title: "Capture Selection", action: #selector(captureSelection), keyEquivalent: "")
+        let capture = NSMenuItem(
+            title: "Capture Selection",
+            action: isStoreAvailable ? #selector(captureSelection) : nil,
+            keyEquivalent: ""
+        )
         capture.target = self
         apply(settings.captureCombo, to: capture)
         menu.addItem(capture)
 
-        let show = NSMenuItem(title: "Show Stack…", action: #selector(showStack), keyEquivalent: "")
+        let show = NSMenuItem(
+            title: "Show Stack…",
+            action: isStoreAvailable ? #selector(showStack) : nil,
+            keyEquivalent: ""
+        )
         show.target = self
         apply(settings.stackCombo, to: show)
         menu.addItem(show)
 
         menu.addItem(.separator())
 
-        let count = store.entries.count
+        let count = store?.currentEntries.count ?? 0
         let verb = settings.pasteDirectly ? "Paste" : "Copy"
         let copy = NSMenuItem(
-            title: count > 0 ? "\(verb) \(count) Annotation\(count == 1 ? "" : "s") as Markdown" : "Nothing Captured Yet",
+            title: count > 0
+                ? "\(verb) \(count) Annotation\(count == 1 ? "" : "s") as Markdown"
+                : unavailableMenuTitle,
             action: count > 0 ? #selector(copyMarkdown) : nil,
             keyEquivalent: ""
         )
@@ -147,9 +233,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         apply(settings.clearCombo, to: clear)
         menu.addItem(clear)
 
-        if !store.lastCleared.isEmpty {
+        if let undoCount = store?.lastCleared?.entries.count, undoCount > 0 {
             let undo = NSMenuItem(
-                title: "Undo Clear (\(store.lastCleared.count))",
+                title: "Undo Clear (\(undoCount))",
                 action: #selector(undoClear),
                 keyEquivalent: "z"
             )
@@ -193,7 +279,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             name: "voiceCapture",
             combo: settings.voiceCaptureCombo,
             pressed: { [weak self] in self?.captureVoiceSelection() },
-            released: { CaptureController.shared.endVoiceCapture() }
+            released: { [weak self] in self?.captureController.endVoiceCapture() }
         )
         HotKeyCenter.shared.register(name: "copy", combo: settings.copyCombo) { [weak self] in
             self?.copyMarkdown()
@@ -211,19 +297,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func captureSelection() {
         Diag.log("captureSelection invoked")
-        CaptureController.shared.beginCapture()
+        captureController.beginCapture()
     }
 
     private func captureVoiceSelection() {
         Diag.log("voice capture invoked")
-        CaptureController.shared.beginVoiceCapture()
+        captureController.beginVoiceCapture()
     }
 
     @objc private func copyMarkdown() {
-        let count = store.entries.count
+        guard let store else { NSSound.beep(); return }
+        let count = store.currentEntries.count
         let target = NSWorkspace.shared.frontmostApplication?.localizedName ?? "?"
         Diag.log("copyMarkdown invoked, count=\(count) paste=\(settings.pasteDirectly) front=\(target)")
-        guard store.copyMarkdownToPasteboard() else { NSSound.beep(); return }
+        guard CurrentSessionExport.copy(store: store, settings: settings) else {
+            NSSound.beep()
+            return
+        }
 
         guard settings.pasteDirectly else {
             flashStatus("Copied \(count)")
@@ -237,18 +327,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func clearStack() {
-        let count = store.entries.count
+        guard let store else { NSSound.beep(); return }
+        let count = store.currentEntries.count
         Diag.log("clearStack invoked, count=\(count)")
         guard count > 0 else { NSSound.beep(); return }
-        store.clear()
+        store.mutate(.clearSession(sessionID: store.currentSessionID))
         flashStatus("Cleared \(count)")
     }
 
     @objc private func undoClear() {
-        store.undoClear()
+        guard let store else { NSSound.beep(); return }
+        store.mutate(.undoClear)
     }
 
     @objc private func showStack() {
+        guard let store else { NSSound.beep(); return }
         if let stackWindow {
             NSApp.activate(ignoringOtherApps: true)
             stackWindow.makeKeyAndOrderFront(nil)

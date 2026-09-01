@@ -4,7 +4,7 @@ import SwiftUI
 /// Just the quote and a box to write in. Esc cancels, ⌘↩ saves; the panel
 /// handles both, so nothing here needs a button.
 struct CaptureView: View {
-    @ObservedObject var model: CaptureModel
+    @Bindable var model: CaptureModel
     let onSave: () -> Void
     let onCancel: () -> Void
 

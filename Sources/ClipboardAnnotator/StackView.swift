@@ -1,19 +1,23 @@
 import AppKit
+import ClipboardAnnotatorDomain
 import SwiftUI
 
 struct StackView: View {
-    @ObservedObject var store: AnnotationStore
-    @ObservedObject var settings: AppSettings
+    let store: AnnotationStore
+    @Bindable var settings: AppSettings
 
     @State private var showingMarkdown = false
     @State private var justCopied = false
 
+    private var entries: [ClipboardAnnotatorDomain.Annotation] { store.currentEntries }
+    private var undoCount: Int { store.lastCleared?.entries.count ?? 0 }
+
     var body: some View {
         VStack(spacing: 0) {
             Group {
-                if store.entries.isEmpty && store.lastCleared.isEmpty {
+                if entries.isEmpty && undoCount == 0 {
                     emptyState
-                } else if store.entries.isEmpty {
+                } else if entries.isEmpty {
                     clearedState
                 } else if showingMarkdown {
                     markdownPreview
@@ -28,8 +32,6 @@ struct StackView: View {
         }
         .frame(minWidth: 460, minHeight: 340)
     }
-
-    // MARK: - States
 
     private var emptyState: some View {
         VStack(spacing: 16) {
@@ -60,13 +62,13 @@ struct StackView: View {
             VStack(spacing: 5) {
                 Text("Stack cleared")
                     .font(.title3.weight(.semibold))
-                Text("\(store.lastCleared.count) annotation\(store.lastCleared.count == 1 ? "" : "s") set aside.")
+                Text("\(undoCount) annotation\(undoCount == 1 ? "" : "s") set aside.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
 
             Button {
-                store.undoClear()
+                store.mutate(.undoClear)
             } label: {
                 HStack(spacing: 6) {
                     Text("Undo Clear")
@@ -79,21 +81,55 @@ struct StackView: View {
     }
 
     private var list: some View {
-        List {
-            ForEach(Array(store.entries.enumerated()), id: \.element.id) { index, entry in
+        let renderedSession = store.currentSession
+        let renderedSessionID = renderedSession.id
+        let renderedEntries = renderedSession.entries
+
+        return List {
+            ForEach(Array(renderedEntries.enumerated()), id: \.element.id) { index, entry in
                 StackRow(
                     index: index,
                     entry: entry,
-                    onUpdate: { store.update($0) },
-                    onDelete: { store.remove(ids: [entry.id]) }
+                    onUpdate: { updated in
+                        store.mutate(.updateAnnotation(
+                            sessionID: renderedSessionID,
+                            annotation: updated
+                        ))
+                    },
+                    onDelete: {
+                        store.mutate(.removeAnnotation(
+                            sessionID: renderedSessionID,
+                            annotationID: entry.id
+                        ))
+                    }
                 )
                 .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 12))
                 .listRowSeparator(.visible)
             }
-            .onMove { store.move(from: $0, to: $1) }
+            .onMove { offsets, destination in
+                let ids = renderedEntries.map(\.id)
+                for move in AnnotationMoveMapping.moves(
+                    annotationIDs: ids,
+                    from: offsets,
+                    to: destination
+                ) {
+                    store.mutate(.moveAnnotation(
+                        sessionID: renderedSessionID,
+                        annotationID: move.annotationID,
+                        destinationIndex: move.destinationIndex
+                    ))
+                }
+            }
             .onDelete { offsets in
-                let ids = Set(offsets.map { store.entries[$0].id })
-                store.remove(ids: ids)
+                let ids = offsets.compactMap {
+                    renderedEntries.indices.contains($0) ? renderedEntries[$0].id : nil
+                }
+                for id in ids {
+                    store.mutate(.removeAnnotation(
+                        sessionID: renderedSessionID,
+                        annotationID: id
+                    ))
+                }
             }
         }
         .listStyle(.plain)
@@ -102,7 +138,7 @@ struct StackView: View {
 
     private var markdownPreview: some View {
         ScrollView {
-            Text(store.markdown(includeSource: settings.includeSource, includeHeading: settings.includeHeading))
+            Text(CurrentSessionExport.markdown(store: store, settings: settings))
                 .font(.system(.callout, design: .monospaced))
                 .lineSpacing(3)
                 .textSelection(.enabled)
@@ -111,11 +147,9 @@ struct StackView: View {
         }
     }
 
-    // MARK: - Footer
-
     private var footer: some View {
         HStack(spacing: 8) {
-            Text("\(store.entries.count) annotation\(store.entries.count == 1 ? "" : "s")")
+            Text("\(entries.count) annotation\(entries.count == 1 ? "" : "s")")
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
 
@@ -128,34 +162,36 @@ struct StackView: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .fixedSize()
-            .disabled(store.entries.isEmpty)
+            .disabled(entries.isEmpty)
 
-            if !store.lastCleared.isEmpty {
-                Button("Undo Clear (\(store.lastCleared.count))") {
-                    store.undoClear()
+            if undoCount > 0 {
+                Button("Undo Clear (\(undoCount))") {
+                    store.mutate(.undoClear)
                 }
                 .keyboardShortcut("z", modifiers: [.command])
             }
 
             Button("Clear") {
-                store.clear()
+                store.mutate(.clearSession(sessionID: store.currentSessionID))
             }
             .keyboardShortcut(.delete, modifiers: [.control, .command])
-            .disabled(store.entries.isEmpty)
+            .disabled(entries.isEmpty)
 
             Button {
-                if store.copyMarkdownToPasteboard() {
+                if CurrentSessionExport.copy(store: store, settings: settings) {
                     justCopied = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { justCopied = false }
                 }
             } label: {
-                Label(justCopied ? "Copied" : "Copy Markdown",
-                      systemImage: justCopied ? "checkmark" : "doc.on.clipboard")
-                    .frame(minWidth: 108)
+                Label(
+                    justCopied ? "Copied" : "Copy Markdown",
+                    systemImage: justCopied ? "checkmark" : "doc.on.clipboard"
+                )
+                .frame(minWidth: 108)
             }
             .keyboardShortcut("c", modifiers: [.command, .shift])
             .buttonStyle(.borderedProminent)
-            .disabled(store.entries.isEmpty)
+            .disabled(entries.isEmpty)
             .animation(.easeOut(duration: 0.15), value: justCopied)
         }
         .controlSize(.small)
@@ -165,18 +201,17 @@ struct StackView: View {
     }
 }
 
-// MARK: - Row
-
 private struct StackRow: View {
     let index: Int
-    let entry: Annotation
-    let onUpdate: (Annotation) -> Void
+    let entry: ClipboardAnnotatorDomain.Annotation
+    let onUpdate: (ClipboardAnnotatorDomain.Annotation) -> Void
     let onDelete: () -> Void
 
     @State private var hovering = false
 
     private var quote: String {
-        entry.quote.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard case let .selection(quote) = entry.subject else { return "" }
+        return quote.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     var body: some View {
@@ -188,11 +223,9 @@ private struct StackRow: View {
                     .frame(minWidth: 18, minHeight: 18)
                     .background(Circle().fill(Color.primary.opacity(0.07)))
 
-                if let app = entry.sourceApp {
-                    Text(app)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                }
+                Text(entry.provenance.application.name)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
 
                 Text(entry.createdAt.formatted(date: .omitted, time: .shortened))
                     .font(.caption.monospacedDigit())
