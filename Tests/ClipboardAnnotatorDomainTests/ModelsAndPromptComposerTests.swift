@@ -26,9 +26,9 @@ final class ModelsAndPromptComposerTests: XCTestCase {
             createdAt: date
         )
         let second = Annotation(
-            id: annotationID,
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000012")!,
             subject: .standalone,
-            note: "A second note with the same ID remains in an ordinary Array.",
+            note: "A second note remains in array order.",
             provenance: Provenance(application: ApplicationIdentity(name: "Reader")),
             createdAt: date.addingTimeInterval(60)
         )
@@ -43,6 +43,8 @@ final class ModelsAndPromptComposerTests: XCTestCase {
             currentSessionID: session.id,
             lastCleared: ClearedBatch(sessionID: session.id, entries: [second, first])
         )
+        try SessionDocumentMutations.validate(document)
+
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.sortedKeys]
@@ -67,19 +69,27 @@ final class ModelsAndPromptComposerTests: XCTestCase {
             .selection(quote: "First line\n\nThird line"),
             .standalone,
         ]
-        let provenance = Provenance(
-            application: ApplicationIdentity(name: "Helium", bundleID: "com.example.helium"),
-            windowTitle: "Page title",
-            url: URL(string: "https://example.com/article"),
-            workingDirectory: URL(fileURLWithPath: "/tmp/project")
-        )
+        let application = ApplicationIdentity(name: "Helium", bundleID: "com.example.helium")
+        let url = URL(string: "https://example.com/article")!
+        let directory = URL(fileURLWithPath: "/tmp/project")
+        let provenances = [
+            Provenance(application: application),
+            Provenance(application: application, url: url),
+            Provenance(application: application, workingDirectory: directory),
+            Provenance(
+                application: application,
+                windowTitle: "Page title",
+                url: url,
+                workingDirectory: directory
+            ),
+        ]
         let encoder = JSONEncoder()
         let decoder = JSONDecoder()
 
         XCTAssertEqual(try decoder.decode([Subject].self, from: encoder.encode(subjects)), subjects)
         XCTAssertEqual(
-            try decoder.decode(Provenance.self, from: encoder.encode(provenance)),
-            provenance
+            try decoder.decode([Provenance].self, from: encoder.encode(provenances)),
+            provenances
         )
     }
 
