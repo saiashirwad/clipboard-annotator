@@ -24,7 +24,7 @@ public enum PromptComposer {
         )
         var blocks: [String] = []
 
-        if !profile.preamble.isEmpty {
+        if !profile.preamble.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             blocks.append(profile.preamble)
         }
 

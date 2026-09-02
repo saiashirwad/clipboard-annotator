@@ -2,36 +2,6 @@ import AppKit
 import ClipboardAnnotatorDomain
 import Foundation
 
-/// Maps the current app settings onto the Domain export model until profiles
-/// have their own UI and persistence.
-enum OutputProfileProjection {
-    static func profile(
-        includeSource: Bool,
-        includeHeading: Bool,
-        clearAfterCopy: Bool
-    ) -> Profile {
-        Profile(
-            name: "Current Settings",
-            preamble: "",
-            includeApplication: includeSource,
-            includeWindow: false,
-            includeLink: includeSource,
-            includeTimestamps: includeSource,
-            includeHeading: includeHeading,
-            clearSessionAfterExport: clearAfterCopy
-        )
-    }
-
-    @MainActor
-    static func profile(settings: AppSettings) -> Profile {
-        profile(
-            includeSource: settings.includeSource,
-            includeHeading: settings.includeHeading,
-            clearAfterCopy: settings.clearAfterCopy
-        )
-    }
-}
-
 /// Converts SwiftUI's insertion offset into ordered Domain final-index moves.
 enum AnnotationMoveMapping {
     struct Move: Equatable {
@@ -76,7 +46,7 @@ enum CurrentSessionExport {
     static func markdown(store: AnnotationStore, settings: AppSettings) -> String {
         PromptComposer.markdown(
             session: store.currentSession,
-            profile: OutputProfileProjection.profile(settings: settings)
+            profile: settings.activeProfile
         )
     }
 
@@ -88,7 +58,7 @@ enum CurrentSessionExport {
     ) -> Bool {
         copy(
             store: store,
-            profile: OutputProfileProjection.profile(settings: settings),
+            profile: settings.activeProfile,
             write: write
         )
     }

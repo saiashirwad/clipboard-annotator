@@ -5,6 +5,7 @@ import SwiftUI
 struct StackView: View {
     let store: AnnotationStore
     @Bindable var settings: AppSettings
+    let onSelectProfile: (UUID) -> Void
 
     @State private var showingMarkdown = false
     @State private var justCopied = false
@@ -49,7 +50,7 @@ struct StackView: View {
             Divider()
             footer
         }
-        .frame(minWidth: 460, minHeight: 340)
+        .frame(minWidth: 640, minHeight: 340)
         .task(id: copyFeedbackID) {
             guard let copyFeedbackID else { return }
             do {
@@ -80,7 +81,21 @@ struct StackView: View {
                         .tag(session.id)
                 }
             }
-            .frame(maxWidth: 240)
+            .frame(maxWidth: 220)
+
+            Picker(
+                "Profile",
+                selection: Binding(
+                    get: { settings.activeProfileID },
+                    set: { onSelectProfile($0) }
+                )
+            ) {
+                ForEach(settings.profiles) { profile in
+                    Text(profile.name).tag(profile.id)
+                }
+            }
+            .frame(maxWidth: 180)
+            .help("Active prompt profile")
 
             Spacer()
 
@@ -200,14 +215,7 @@ struct StackView: View {
     }
 
     private var markdownPreview: some View {
-        ScrollView {
-            Text(CurrentSessionExport.markdown(store: store, settings: settings))
-                .font(.system(.callout, design: .monospaced))
-                .lineSpacing(3)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(16)
-        }
+        PromptPreview(session: store.currentSession, profile: settings.activeProfile)
     }
 
     private var footer: some View {
@@ -322,6 +330,153 @@ struct StackView: View {
         store.mutate(.deleteSession(sessionID: sessionID))
     }
 
+}
+
+private struct PromptPreview: View {
+    let session: Session
+    let profile: Profile
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 22) {
+                if !profile.preamble.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    InlineMarkdownText(profile.preamble)
+                        .font(.body)
+                        .lineSpacing(3)
+                }
+
+                if profile.includeHeading {
+                    Text("Reading notes — \(PromptPreviewFormatting.date(session.createdAt))")
+                        .font(.title2.weight(.semibold))
+                }
+
+                ForEach(Array(session.entries.enumerated()), id: \.element.id) { index, entry in
+                    PromptPreviewEntry(
+                        number: index + 1,
+                        entry: entry,
+                        metadata: PromptPreviewFormatting.metadata(for: entry, profile: profile)
+                    )
+                }
+            }
+            .frame(maxWidth: 720, alignment: .leading)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 22)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .textSelection(.enabled)
+    }
+
+}
+
+private enum PromptPreviewFormatting {
+    static func date(_ date: Date) -> String {
+        date.formatted(Date.FormatStyle(
+            date: .long,
+            time: .omitted,
+            locale: .current,
+            calendar: .current,
+            timeZone: .current
+        ))
+    }
+
+    static func metadata(
+        for entry: ClipboardAnnotatorDomain.Annotation,
+        profile: Profile
+    ) -> [String] {
+        var facts: [String] = []
+        if profile.includeApplication {
+            append(entry.provenance.application.name, to: &facts)
+        }
+        if profile.includeWindow {
+            append(entry.provenance.windowTitle, to: &facts)
+        }
+        if profile.includeLink {
+            if let url = entry.provenance.url {
+                append(display(url), to: &facts)
+            }
+            if let directory = entry.provenance.workingDirectory {
+                append(abbreviatedPath(directory), to: &facts)
+            }
+        }
+        if profile.includeTimestamps {
+            facts.append(entry.createdAt.formatted(date: .omitted, time: .shortened))
+        }
+        return facts
+    }
+
+    private static func append(_ value: String?, to facts: inout [String]) {
+        guard let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return
+        }
+        facts.append(value)
+    }
+
+    private static func display(_ url: URL) -> String {
+        url.isFileURL ? abbreviatedPath(url) : url.absoluteString
+    }
+
+    private static func abbreviatedPath(_ url: URL) -> String {
+        (url.path as NSString).abbreviatingWithTildeInPath
+    }
+}
+
+private struct PromptPreviewEntry: View {
+    let number: Int
+    let entry: ClipboardAnnotatorDomain.Annotation
+    let metadata: [String]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("\(number)")
+                .font(.headline.weight(.semibold).monospacedDigit())
+
+            if case let .selection(quote) = entry.subject {
+                Text(quote)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .lineSpacing(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+                    .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 6))
+                    .overlay(alignment: .leading) {
+                        Rectangle()
+                            .fill(Color.accentColor.opacity(0.65))
+                            .frame(width: 3)
+                            .padding(.vertical, 5)
+                    }
+            }
+
+            InlineMarkdownText(entry.note)
+                .font(.body)
+                .lineSpacing(3)
+
+            if !metadata.isEmpty {
+                Text(metadata.joined(separator: " · "))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct InlineMarkdownText: View {
+    let source: String
+
+    init(_ source: String) {
+        self.source = source
+    }
+
+    var body: some View {
+        if let attributed = try? AttributedString(
+            markdown: source,
+            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        ) {
+            Text(attributed)
+        } else {
+            Text(source)
+        }
+    }
 }
 
 private struct StackRow: View {

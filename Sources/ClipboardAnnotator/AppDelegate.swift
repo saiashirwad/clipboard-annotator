@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var stackWindow: NSWindow?
     private var settingsWindow: NSWindow?
+    private var profileEditor: ProfileEditorState?
     private var quickSwitchWindow: NSPanel?
     private enum StoreState {
         case loading
@@ -38,6 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installMainMenu()
         setUpStatusItem()
         settings.onHotKeysChanged = { [weak self] in self?.registerHotKeys() }
+        settings.onProfilesChanged = { [weak self] in self?.refreshStatusItem() }
         registerHotKeys()
 
         bootstrapStore()
@@ -111,6 +113,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let profileEditor else { return .terminateNow }
+        return ProfileDialogs.shouldClose(profileEditor) ? .terminateNow : .terminateCancel
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         bootstrapTask?.cancel()
         bootstrapTask = nil
@@ -126,6 +133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.captureObserver = nil
         }
         settings.onHotKeysChanged = nil
+        settings.onProfilesChanged = nil
         for name in ["capture", "voiceCapture", "copy", "stack", "switchSession", "clear"] {
             HotKeyCenter.shared.unregister(name: name)
         }
@@ -143,6 +151,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let appItem = NSMenuItem()
         appItem.submenu = NSMenu(title: "Clipboard Annotator")
         main.addItem(appItem)
+
+        let file = NSMenu(title: "File")
+        file.addItem(
+            withTitle: "Close Window",
+            action: #selector(NSWindow.performClose(_:)),
+            keyEquivalent: "w"
+        )
+        let fileItem = NSMenuItem()
+        fileItem.submenu = file
+        main.addItem(fileItem)
 
         let edit = NSMenu(title: "Edit")
         edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
@@ -186,6 +204,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func applyCountTitle() {
         let count = store?.currentEntries.count ?? 0
         statusItem.button?.title = count > 0 ? " \(count)" : ""
+        let sessionName = store?.currentSession.name ?? "No session"
+        statusItem.button?.toolTip = "\(sessionName) · \(settings.activeProfile.name)"
     }
 
     private func flashStatus(_ text: String) {
@@ -286,6 +306,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             sessionRoot.submenu = sessionMenu
             menu.addItem(sessionRoot)
         }
+
+        let profileMenu = NSMenu(title: "Profile")
+        for profile in settings.profiles {
+            let item = NSMenuItem(
+                title: profile.name,
+                action: #selector(selectProfile(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = profile.id as NSUUID
+            item.state = profile.id == settings.activeProfileID ? .on : .off
+            profileMenu.addItem(item)
+        }
+        let profileRoot = NSMenuItem(title: "Profile", action: nil, keyEquivalent: "")
+        profileRoot.submenu = profileMenu
+        menu.addItem(profileRoot)
 
         menu.addItem(.separator())
 
@@ -415,11 +451,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let targetName = target?.localizedName ?? "?"
         let targetProcessIdentifier = target?.processIdentifier ?? 0
         Diag.log("copyMarkdown invoked, count=\(count) paste=\(settings.pasteDirectly) front=\(targetName)")
+        let clearsAfterExport = settings.activeProfile.clearSessionAfterExport
         guard CurrentSessionExport.copy(store: store, settings: settings) else {
             NSSound.beep()
             return
         }
-        if settings.clearAfterCopy {
+        if clearsAfterExport {
             observeMenuMutation(store: store, presentsError: false)
         }
 
@@ -466,6 +503,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func switchToSession(_ sender: NSMenuItem) {
         guard let sessionID = capturedSessionID(from: sender) else { NSSound.beep(); return }
         enqueueMenuMutation(.switchSession(sessionID: sessionID))
+    }
+
+    @objc private func selectProfile(_ sender: NSMenuItem) {
+        guard let profileID = capturedSessionID(from: sender) else { NSSound.beep(); return }
+        requestProfileSelection(profileID)
+    }
+
+    private func requestProfileSelection(_ profileID: UUID) {
+        if let profileEditor {
+            switch profileEditor.requestSelection(profileID) {
+            case .needsDecision:
+                _ = ProfileDialogs.resolvePendingSelection(profileEditor)
+            case .selected, .unchanged:
+                break
+            case .rejected:
+                NSSound.beep()
+            }
+            return
+        }
+        do {
+            try settings.selectProfile(id: profileID)
+        } catch {
+            NSSound.beep()
+        }
     }
 
     @objc private func newSession(_ sender: NSMenuItem) {
@@ -565,15 +626,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 460),
+            contentRect: NSRect(x: 0, y: 0, width: 680, height: 460),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered,
             defer: false
         )
         window.title = "Annotation Stack"
         window.isReleasedWhenClosed = false
+        let hosting = NSHostingView(rootView: StackView(
+            store: store,
+            settings: settings,
+            onSelectProfile: { [weak self] profileID in
+                self?.requestProfileSelection(profileID)
+            }
+        ))
+        window.contentView = hosting
+        let fittingSize = hosting.fittingSize
+        window.setContentSize(NSSize(
+            width: max(680, fittingSize.width),
+            height: max(460, fittingSize.height)
+        ))
         window.center()
-        window.contentView = NSHostingView(rootView: StackView(store: store, settings: settings))
         window.delegate = self
         stackWindow = window
         NSApp.activate(ignoringOtherApps: true)
@@ -645,7 +718,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.title = "Settings"
         window.isReleasedWhenClosed = false
         window.center()
-        let hosting = NSHostingView(rootView: SettingsView(settings: settings))
+        let profileEditor = ProfileEditorState(settings: settings)
+        self.profileEditor = profileEditor
+        let hosting = NSHostingView(rootView: SettingsView(
+            settings: settings,
+            profileEditor: profileEditor,
+            onSelectProfile: { [weak self] profileID in
+                self?.requestProfileSelection(profileID)
+            }
+        ))
         window.contentView = hosting
         window.setContentSize(hosting.fittingSize)
         window.delegate = self
@@ -668,10 +749,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 extension AppDelegate: NSWindowDelegate {
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard sender === settingsWindow, let profileEditor else { return true }
+        return ProfileDialogs.shouldClose(profileEditor)
+    }
+
     func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
         if window === stackWindow { stackWindow = nil }
-        if window === settingsWindow { settingsWindow = nil }
+        if window === settingsWindow {
+            settingsWindow = nil
+            profileEditor = nil
+        }
         if let panel = window as? NSPanel, panel === quickSwitchWindow {
             tearDownQuickSwitcher(closing: panel)
         }

@@ -71,22 +71,6 @@ final class RuntimeCutoverTests: XCTestCase {
         XCTAssertNil(panel.onClose)
     }
 
-    func testOutputProfileProjectionPreservesCurrentToggles() {
-        let profile = OutputProfileProjection.profile(
-            includeSource: true,
-            includeHeading: false,
-            clearAfterCopy: true
-        )
-
-        XCTAssertTrue(profile.includeApplication)
-        XCTAssertTrue(profile.includeLink)
-        XCTAssertTrue(profile.includeTimestamps)
-        XCTAssertFalse(profile.includeWindow)
-        XCTAssertFalse(profile.includeHeading)
-        XCTAssertTrue(profile.clearSessionAfterExport)
-        XCTAssertEqual(profile.preamble, "")
-    }
-
     func testMoveMappingProducesDomainFinalIndexesForSwiftUIDestination() {
         let ids = (0..<4).map { _ in UUID() }
         let moves = AnnotationMoveMapping.moves(
@@ -132,6 +116,51 @@ final class RuntimeCutoverTests: XCTestCase {
         XCTAssertFalse(copied)
         XCTAssertFalse(attemptedText.isEmpty)
         XCTAssertEqual(store.currentEntries, [annotation])
+        store.teardown()
+    }
+
+    @MainActor
+    func testSettingsActiveProfileShapesExportAndSuccessfulWriteClearsSession() async throws {
+        let suite = "RuntimeCutoverTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettings(defaults: defaults)
+        var profile = Profile.plain
+        profile = Profile(
+            id: UUID(),
+            name: "Export and Clear",
+            preamble: "Use this profile",
+            includeApplication: false,
+            includeWindow: false,
+            includeLink: false,
+            includeTimestamps: false,
+            includeHeading: false,
+            clearSessionAfterExport: true
+        )
+        try settings.addProfile(profile)
+        try settings.selectProfile(id: profile.id)
+
+        let annotation = Annotation(
+            subject: .standalone,
+            note: "A note",
+            provenance: Provenance(application: ApplicationIdentity(name: "Reader"))
+        )
+        let session = Session(name: "Default", entries: [annotation])
+        let persistence = StorePersistence(load: { nil }, commit: { _ in })
+        let store = try await AnnotationStore(persistence: persistence, defaultSession: session)
+        var written = ""
+
+        let copied = CurrentSessionExport.copy(store: store, settings: settings) { markdown in
+            written = markdown
+            return true
+        }
+        await store.waitForIdle()
+
+        XCTAssertTrue(copied)
+        XCTAssertEqual(written, "Use this profile\n\n## 1\n\nA note")
+        XCTAssertTrue(store.currentEntries.isEmpty)
+        XCTAssertEqual(store.lastCleared?.entries, [annotation])
         store.teardown()
     }
 

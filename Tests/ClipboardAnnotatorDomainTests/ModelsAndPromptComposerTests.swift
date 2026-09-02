@@ -190,6 +190,15 @@ final class ModelsAndPromptComposerTests: XCTestCase {
         XCTAssertEqual(metadata(in: compose(profile: timestampOnly)), [expectedTime])
     }
 
+    func testComposerOmitsWhitespaceOnlyPreambleWithoutTrimmingNonblankContent() {
+        var profile = Profile.plain
+        profile.preamble = "  \n\t"
+        XCTAssertEqual(compose(profile: profile), compose(profile: .plain))
+
+        profile.preamble = "  Keep this spacing  "
+        XCTAssertTrue(compose(profile: profile).hasPrefix("  Keep this spacing  \n\n## 1"))
+    }
+
     func testPlainComposerFormatsSelectionAndStandaloneEntriesExactly() {
         let output = compose(profile: .plain)
 
