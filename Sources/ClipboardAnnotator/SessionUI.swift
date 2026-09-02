@@ -115,31 +115,105 @@ struct SessionNameDraft: Equatable {
     }
 }
 
-struct QuickSwitchState: Equatable {
-    private(set) var selectedSessionID: UUID?
+/// One row in the session palette: an existing session, or the offer to
+/// create one named after the current query.
+enum QuickSwitchRow: Equatable, Hashable {
+    case session(UUID)
+    case create(String)
+}
 
-    init(selectedSessionID: UUID? = nil) {
-        self.selectedSessionID = selectedSessionID
+/// What the palette lists for a query. Matching is case- and diacritic-
+/// insensitive on any part of the name; an empty query lists everything.
+struct QuickSwitchListing: Equatable {
+    let sessions: [SessionItemFacts]
+    let creatableName: String?
+
+    init(facts: SessionUIFacts, query: String) {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedQuery = SessionDocumentMutations.normalizedSessionName(trimmed)
+        sessions = facts.sessions.filter { session in
+            guard let normalizedQuery else { return true }
+            let name = SessionDocumentMutations.normalizedSessionName(session.name) ?? ""
+            return name.contains(normalizedQuery)
+        }
+        let taken = facts.sessions.contains {
+            SessionDocumentMutations.normalizedSessionName($0.name) == normalizedQuery
+        }
+        creatableName = normalizedQuery != nil && !taken ? trimmed : nil
     }
 
+    var rows: [QuickSwitchRow] {
+        var rows = sessions.map { QuickSwitchRow.session($0.id) }
+        if let creatableName { rows.append(.create(creatableName)) }
+        return rows
+    }
+
+    var isEmpty: Bool { rows.isEmpty }
+}
+
+struct QuickSwitchState: Equatable {
+    private(set) var highlight: QuickSwitchRow?
+
+    init(selectedSessionID: UUID? = nil) {
+        highlight = selectedSessionID.map(QuickSwitchRow.session)
+    }
+
+    var selectedSessionID: UUID? {
+        if case let .session(id) = highlight { return id }
+        return nil
+    }
+
+    var highlightsCreateRow: Bool {
+        if case .create = highlight { return true }
+        return false
+    }
+
+    /// Keeps an explicit session choice while that session exists, and
+    /// otherwise falls back to the current session.
     mutating func synchronize(with facts: SessionUIFacts) {
-        guard
-            let selectedSessionID,
-            facts.session(id: selectedSessionID) != nil
-        else {
-            self.selectedSessionID = facts.currentSessionID
+        switch highlight {
+        case let .session(id) where facts.session(id: id) != nil:
             return
+        case .create:
+            return
+        default:
+            highlight = .session(facts.currentSessionID)
         }
     }
 
     mutating func choose(_ sessionID: UUID, from facts: SessionUIFacts) -> UUID? {
         guard facts.session(id: sessionID) != nil else { return nil }
-        selectedSessionID = sessionID
+        highlight = .session(sessionID)
         return sessionID
     }
 
     mutating func selectCurrent(from facts: SessionUIFacts) {
-        selectedSessionID = facts.currentSessionID
+        highlight = .session(facts.currentSessionID)
+    }
+
+    mutating func highlight(_ row: QuickSwitchRow) {
+        highlight = row
+    }
+
+    /// Moves the highlight through the listed rows, wrapping at both ends.
+    mutating func move(by offset: Int, in rows: [QuickSwitchRow]) {
+        guard !rows.isEmpty else { return }
+        guard let highlight, let index = rows.firstIndex(of: highlight) else {
+            self.highlight = offset < 0 ? rows[rows.count - 1] : rows[0]
+            return
+        }
+        let count = rows.count
+        self.highlight = rows[((index + offset) % count + count) % count]
+    }
+
+    /// Ensures the highlight names a listed row after the query changes.
+    mutating func confine(to rows: [QuickSwitchRow], preferring currentSessionID: UUID) {
+        if let highlight, rows.contains(highlight) { return }
+        if rows.contains(.session(currentSessionID)) {
+            highlight = .session(currentSessionID)
+        } else {
+            highlight = rows.first
+        }
     }
 
     func selectedSession(in facts: SessionUIFacts) -> SessionItemFacts? {

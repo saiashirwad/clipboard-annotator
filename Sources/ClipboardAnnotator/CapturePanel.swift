@@ -224,7 +224,7 @@ final class CaptureController {
     private func presentVoice(_ model: VoiceCaptureModel) {
         guard let captured = model.captured else { return }
         let panel = CapturePanel(
-            contentRect: NSRect(x: 0, y: 0, width: 220, height: 58),
+            contentRect: NSRect(x: 0, y: 0, width: 380, height: 110),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -241,7 +241,12 @@ final class CaptureController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.animationBehavior = .utilityWindow
 
-        panel.contentView = NSHostingView(rootView: VoiceCaptureView(model: model))
+        let hosting = NSHostingView(rootView: VoiceCaptureView(
+            model: model,
+            meter: VoiceAnnotationService.shared.levelMeter
+        ))
+        panel.contentView = hosting
+        panel.setContentSize(hosting.fittingSize)
         positionVoiceOverlay(panel, for: captured)
         voicePanel = panel
         installVoiceKeyMonitor()
@@ -284,9 +289,11 @@ final class CaptureController {
             ?? NSScreen.main
         guard let visible = screen?.visibleFrame else { return }
 
+        // The overlay view carries its own shadow padding, so sit a little
+        // lower than the capsule should visually land.
         let origin = NSPoint(
             x: visible.midX - panel.frame.width / 2,
-            y: visible.minY + 20
+            y: visible.minY + 4
         )
         panel.setFrameOrigin(origin)
     }

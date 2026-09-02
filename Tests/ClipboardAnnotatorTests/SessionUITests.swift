@@ -141,3 +141,78 @@ final class SessionUITests: XCTestCase {
         )
     }
 }
+
+extension SessionUITests {
+    func testQuickSwitchListingFiltersAndOffersCreation() {
+        let facts = SessionUIFacts(
+            sessions: [
+                Session(id: firstID, name: "Reading"),
+                Session(id: secondID, name: "Writing"),
+            ],
+            currentSessionID: firstID,
+            lastCleared: nil
+        )
+
+        let everything = QuickSwitchListing(facts: facts, query: "   ")
+        XCTAssertEqual(everything.sessions.map(\.id), [firstID, secondID])
+        XCTAssertNil(everything.creatableName)
+
+        let partial = QuickSwitchListing(facts: facts, query: "ITI")
+        XCTAssertEqual(partial.sessions.map(\.id), [secondID])
+        XCTAssertEqual(partial.creatableName, "ITI")
+        XCTAssertEqual(partial.rows, [.session(secondID), .create("ITI")])
+
+        let existing = QuickSwitchListing(facts: facts, query: " reading ")
+        XCTAssertEqual(existing.sessions.map(\.id), [firstID])
+        XCTAssertNil(existing.creatableName, "an existing name is not offered for creation")
+
+        let none = QuickSwitchListing(facts: facts, query: "zzz")
+        XCTAssertTrue(none.sessions.isEmpty)
+        XCTAssertEqual(none.rows, [.create("zzz")])
+    }
+
+    func testQuickSwitchStateMovesThroughRowsAndConfinesToListing() {
+        let facts = SessionUIFacts(
+            sessions: [
+                Session(id: firstID, name: "Reading"),
+                Session(id: secondID, name: "Writing"),
+            ],
+            currentSessionID: firstID,
+            lastCleared: nil
+        )
+        let rows: [QuickSwitchRow] = [.session(firstID), .session(secondID), .create("New")]
+
+        var state = QuickSwitchState()
+        state.synchronize(with: facts)
+        XCTAssertEqual(state.highlight, .session(firstID))
+
+        state.move(by: -1, in: rows)
+        XCTAssertEqual(state.highlight, .create("New"), "moving up from the top wraps")
+        XCTAssertTrue(state.highlightsCreateRow)
+        XCTAssertNil(state.selectedSessionID)
+
+        state.move(by: 1, in: rows)
+        XCTAssertEqual(state.highlight, .session(firstID), "moving down from the bottom wraps")
+
+        state.move(by: 1, in: rows)
+        XCTAssertEqual(state.selectedSessionID, secondID)
+
+        state.confine(to: [.session(secondID)], preferring: firstID)
+        XCTAssertEqual(state.highlight, .session(secondID), "a still-listed highlight is kept")
+
+        state.confine(to: [.create("Wri")], preferring: firstID)
+        XCTAssertEqual(state.highlight, .create("Wri"), "otherwise the first listed row wins")
+
+        state.confine(to: [.session(secondID), .session(firstID)], preferring: firstID)
+        XCTAssertEqual(state.highlight, .session(firstID), "the current session is preferred when listed")
+
+        state.move(by: 1, in: [])
+        XCTAssertEqual(state.highlight, .session(firstID), "an empty listing leaves the highlight alone")
+
+        state.synchronize(with: facts)
+        XCTAssertEqual(state.highlight, .session(firstID))
+        state.highlight(.create("Draft"))
+        state.synchronize(with: facts)
+        XCTAssertEqual(state.highlight, .create("Draft"), "session changes keep a create highlight")
+    }
+}

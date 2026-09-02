@@ -10,7 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var setupWindowController: SetupWindowController?
     private var accessibilityHelperWindowController: AccessibilityHelperWindowController?
     private var profileEditor: ProfileEditorState?
-    private var quickSwitchWindow: NSPanel?
+    private var quickSwitch: QuickSwitchWindowController?
     private enum StoreState {
         case loading
         case available(AnnotationStore)
@@ -142,7 +142,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menuMutationTask = nil
         pasteTask?.cancel()
         pasteTask = nil
-        tearDownQuickSwitcher()
+        quickSwitch?.close()
         setupWindowController?.teardown()
         setupWindowController = nil
         accessibilityHelperWindowController?.teardown()
@@ -683,35 +683,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func showQuickSwitcher() {
         guard let store else { NSSound.beep(); return }
-        if let quickSwitchWindow {
-            NSApp.activate(ignoringOtherApps: true)
-            quickSwitchWindow.makeKeyAndOrderFront(nil)
-            return
+        if quickSwitch == nil {
+            quickSwitch = QuickSwitchWindowController(
+                store: store,
+                onSwitch: { [weak self] sessionID in
+                    self?.switchFromQuickSwitcher(to: sessionID)
+                },
+                onDismiss: { [weak self] in self?.quickSwitch = nil }
+            )
         }
-
-        let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 390, height: 160),
-            styleMask: [.titled, .closable, .utilityWindow],
-            backing: .buffered,
-            defer: false
-        )
-        panel.title = "Switch Session"
-        panel.isReleasedWhenClosed = false
-        panel.isFloatingPanel = true
-        panel.center()
-        let hosting = NSHostingView(rootView: QuickSwitchView(
-            store: store,
-            onSwitch: { [weak self] sessionID in
-                self?.switchFromQuickSwitcher(to: sessionID)
-            },
-            onClose: { [weak self] in self?.tearDownQuickSwitcher() }
-        ))
-        panel.contentView = hosting
-        panel.setContentSize(hosting.fittingSize)
-        panel.delegate = self
-        quickSwitchWindow = panel
-        NSApp.activate(ignoringOtherApps: true)
-        panel.makeKeyAndOrderFront(nil)
+        quickSwitch?.show()
     }
 
     private func switchFromQuickSwitcher(to sessionID: UUID) {
@@ -719,16 +700,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .switchSession(sessionID: sessionID),
             presentsError: true
         )
-        tearDownQuickSwitcher()
-    }
-
-    private func tearDownQuickSwitcher(closing closingPanel: NSPanel? = nil) {
-        guard let panel = quickSwitchWindow else { return }
-        quickSwitchWindow = nil
-        panel.delegate = nil
-        guard panel !== closingPanel else { return }
-        panel.orderOut(nil)
-        panel.close()
+        quickSwitch?.close()
     }
 
     private func presentPermissionHelpForCapture() {
@@ -774,17 +746,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 460, height: 400),
-            styleMask: [.titled, .closable],
+            contentRect: NSRect(x: 0, y: 0, width: SettingsView.width, height: 560),
+            styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         window.title = "Settings"
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
         window.center()
         let profileEditor = ProfileEditorState(settings: settings)
         self.profileEditor = profileEditor
-        let hosting = NSHostingView(rootView: SettingsView(
+        let settingsView = SettingsView(
             settings: settings,
             profileEditor: profileEditor,
             permissionState: permissionState,
@@ -797,23 +772,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onRunSetup: { [weak self] in
                 self?.presentSetup()
             }
-        ))
+        )
+        // Each tab has its own natural height; follow it with the top edge still.
+        let hosting = NSHostingView(rootView: settingsView
+            .background(GeometryReader { proxy in
+                Color.clear.preference(key: HeightKey.self, value: proxy.size.height)
+            })
+            .onPreferenceChange(HeightKey.self) { [weak self] height in
+                self?.fitSettingsWindow(toContentHeight: height)
+            })
+        hosting.sizingOptions = [.intrinsicContentSize]
         window.contentView = hosting
         window.setContentSize(hosting.fittingSize)
         window.delegate = self
         settingsWindow = window
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
+        // Open calmly, without the first text field selected.
+        window.makeFirstResponder(nil)
+    }
+
+    private func fitSettingsWindow(toContentHeight height: CGFloat) {
+        guard let window = settingsWindow, height > 0 else { return }
+        let frame = window.frame
+        guard abs(height - frame.height) > 0.5 else { return }
+        let target = NSRect(
+            x: frame.minX,
+            y: frame.maxY - height,
+            width: frame.width,
+            height: height
+        )
+        guard window.isVisible else {
+            window.setFrame(target, display: true)
+            return
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.18
+            window.animator().setFrame(target, display: true)
+        }
     }
 
     /// Tuck away auxiliary windows so a capture shows the note box alone.
     private func hideAuxiliaryWindows() {
-        Diag.log("hideAuxiliaryWindows stack=\(stackWindow?.isVisible ?? false) settings=\(settingsWindow?.isVisible ?? false) quickSwitch=\(quickSwitchWindow?.isVisible ?? false)")
+        Diag.log("hideAuxiliaryWindows stack=\(stackWindow?.isVisible ?? false) settings=\(settingsWindow?.isVisible ?? false) quickSwitch=\(quickSwitch != nil)")
         stackWindow?.orderOut(nil)
         settingsWindow?.orderOut(nil)
         setupWindowController?.close()
         accessibilityHelperWindowController?.close()
-        quickSwitchWindow?.orderOut(nil)
+        quickSwitch?.close()
     }
 
     @objc private func quit() {
@@ -833,9 +839,6 @@ extension AppDelegate: NSWindowDelegate {
         if window === settingsWindow {
             settingsWindow = nil
             profileEditor = nil
-        }
-        if let panel = window as? NSPanel, panel === quickSwitchWindow {
-            tearDownQuickSwitcher(closing: panel)
         }
     }
 }

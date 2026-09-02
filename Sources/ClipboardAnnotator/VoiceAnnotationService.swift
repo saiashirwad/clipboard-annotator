@@ -10,6 +10,7 @@ final class VoiceAnnotationService {
     static let shared = VoiceAnnotationService()
 
     private let transcriber = LocalVoiceTranscriber()
+    let levelMeter = VoiceLevelMeter()
     private var engine: AVAudioEngine?
     private var recordingFile: AVAudioFile?
     private var recordingURL: URL?
@@ -66,12 +67,16 @@ final class VoiceAnnotationService {
             interleaved: false
         )
 
-        input.installTap(onBus: 0, bufferSize: 1_024, format: format) { buffer, _ in
+        let meter = levelMeter
+        meter.reset()
+        input.installTap(onBus: 0, bufferSize: 2_048, format: format) { buffer, _ in
             do {
                 try file.write(from: buffer)
             } catch {
                 Diag.log("voice audio write failed: \(error.localizedDescription)")
             }
+            let level = VoiceLevelMeter.level(of: buffer)
+            Task { @MainActor in meter.push(level) }
         }
 
         do {
@@ -119,6 +124,7 @@ final class VoiceAnnotationService {
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         self.engine = nil
+        levelMeter.reset()
         recordingFile = nil // Flush the audio file before FluidAudio reads it.
         recordingURL = nil
         Diag.log("voice recording stopped")
