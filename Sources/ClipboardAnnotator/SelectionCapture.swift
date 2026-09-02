@@ -106,11 +106,11 @@ enum SelectionCapture {
 
     private static func postCommandC() { postCommandKey(8) }  // kVK_ANSI_C
 
-    /// Sends ⌘V to whichever app is frontmost. We are an accessory app and
-    /// never activate for this, so the target keeps its focus and caret.
-    static func pasteIntoFrontmostApp() {
+    /// Sends ⌘V to the app that was frontmost when export began.
+    static func paste(into processIdentifier: pid_t) {
+        guard processIdentifier > 0 else { return }
         waitForModifierRelease()
-        postCommandKey(9)  // kVK_ANSI_V
+        postCommandKey(9, processIdentifier: processIdentifier)  // kVK_ANSI_V
     }
 
     /// A synthetic ⌘-key event inherits whatever modifiers are physically held.
@@ -127,7 +127,7 @@ enum SelectionCapture {
         Diag.log("waitForModifierRelease timed out, flags still \(NSEvent.modifierFlags.rawValue)")
     }
 
-    private static func postCommandKey(_ key: CGKeyCode) {
+    private static func postCommandKey(_ key: CGKeyCode, processIdentifier: pid_t? = nil) {
         guard let source = CGEventSource(stateID: .combinedSessionState) else { return }
         source.setLocalEventsFilterDuringSuppressionState(
             [.permitLocalMouseEvents, .permitSystemDefinedEvents], state: .eventSuppressionStateSuppressionInterval
@@ -136,8 +136,13 @@ enum SelectionCapture {
         let up = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: false)
         down?.flags = .maskCommand
         up?.flags = .maskCommand
-        down?.post(tap: .cgAnnotatedSessionEventTap)
-        up?.post(tap: .cgAnnotatedSessionEventTap)
+        if let processIdentifier {
+            down?.postToPid(processIdentifier)
+            up?.postToPid(processIdentifier)
+        } else {
+            down?.post(tap: .cgAnnotatedSessionEventTap)
+            up?.post(tap: .cgAnnotatedSessionEventTap)
+        }
     }
 
     private struct PasteboardItemSnapshot {

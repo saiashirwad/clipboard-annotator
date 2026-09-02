@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var storeState: StoreState = .loading
     private var bootstrapTask: Task<Void, Never>?
     private var menuMutationTask: Task<Void, Never>?
+    private var pasteTask: Task<Void, Never>?
     private var captureObserver: NSObjectProtocol?
 
     private var flashToken = 0
@@ -115,6 +116,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         bootstrapTask = nil
         menuMutationTask?.cancel()
         menuMutationTask = nil
+        pasteTask?.cancel()
+        pasteTask = nil
         tearDownQuickSwitcher()
         captureController.teardown()
         store?.teardown()
@@ -405,9 +408,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func copyMarkdown() {
         guard let store else { NSSound.beep(); return }
+        pasteTask?.cancel()
+        pasteTask = nil
         let count = store.currentEntries.count
-        let target = NSWorkspace.shared.frontmostApplication?.localizedName ?? "?"
-        Diag.log("copyMarkdown invoked, count=\(count) paste=\(settings.pasteDirectly) front=\(target)")
+        let target = NSWorkspace.shared.frontmostApplication
+        let targetName = target?.localizedName ?? "?"
+        let targetProcessIdentifier = target?.processIdentifier ?? 0
+        Diag.log("copyMarkdown invoked, count=\(count) paste=\(settings.pasteDirectly) front=\(targetName)")
         guard CurrentSessionExport.copy(store: store, settings: settings) else {
             NSSound.beep()
             return
@@ -421,8 +428,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         // Give the target app a moment to see the new pasteboard before ⌘V.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-            SelectionCapture.pasteIntoFrontmostApp()
+        // Retain its PID so a focus change cannot redirect the paste.
+        pasteTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(120))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            SelectionCapture.paste(into: targetProcessIdentifier)
+            self?.pasteTask = nil
         }
         flashStatus("Pasted \(count)")
     }
