@@ -1,31 +1,35 @@
 # Clipboard Annotator
 
-A macOS menu bar app. Select text in any app, press a shortcut, write a note
-about it. Notes collect in a stack. Paste the stack anywhere as Markdown.
+A macOS menu bar app for thinking out loud while you read.
+
+Select a passage in any app, press a shortcut, and say or type what you are
+thinking: what you don't follow, what seems off, what you want checked. Keep
+reading. Each note is stamped with where you were. When you reach the end, one
+shortcut turns the whole train of thought into a prompt and pastes it into
+whatever model you're talking to, so it answers your reasoning and not just
+your question.
+
+It works on anything you can select: LLM output, docs, papers, code, or a draft
+of your own.
 
 Requires macOS 14 or later on Apple Silicon.
 
 ## Install
 
-Download the latest `ClipboardAnnotator-<version>.zip` from
-[Releases](../../releases), unzip it, and drag **Clipboard Annotator** into
-`/Applications`. Open it and look for the speech-bubble icon in the menu bar.
+Download the latest zip from [Releases](../../releases), unzip it, and drag
+**Clipboard Annotator** into `/Applications`. Open it and look for the
+speech-bubble icon in the menu bar.
 
-On first launch the setup assistant walks through:
+The setup assistant asks for:
 
-- **Accessibility**, in System Settings → Privacy & Security → Accessibility.
-  Required. It reads the selection in other apps and sends the paste
-  keystroke. Nothing works without it.
-- **Microphone**, only if you want voice annotations.
-- **Voice model**, only if you want voice annotations. Transcription runs on
-  your Mac with [FluidAudio](https://github.com/FluidInference/FluidAudio) and
-  the Parakeet model. The model is a one-time 460 MB download from Hugging
-  Face into `~/Library/Application Support/FluidAudio`. After that, audio and
-  transcription never leave your Mac.
+- **Accessibility.** Required. It reads your selection and sends the paste
+  keystroke.
+- **Microphone and a voice model.** Only for voice notes. The model is a
+  one-time 460 MB download. Transcription runs on your Mac and audio never
+  leaves it.
 
-When you capture from a browser, macOS asks once per browser whether
-Clipboard Annotator may control it. Allowing it lets a note record the tab's
-title and URL. Declining only loses that detail.
+The first time you capture from a browser, macOS asks whether the app may
+control it. Allowing it lets notes record the tab's title and URL.
 
 ## Shortcuts
 
