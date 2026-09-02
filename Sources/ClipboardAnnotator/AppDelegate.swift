@@ -660,6 +660,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             defer: false
         )
         window.title = "Annotation Stack"
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.styleMask.insert(.fullSizeContentView)
+        // An empty unified toolbar makes the title bar as tall as the header,
+        // so the traffic lights centre on the same line as its controls.
+        let toolbar = NSToolbar(identifier: "StackWindowToolbar")
+        toolbar.showsBaselineSeparator = false
+        window.toolbar = toolbar
+        window.toolbarStyle = .unified
+        window.isMovableByWindowBackground = false
         window.isReleasedWhenClosed = false
         let hosting = NSHostingView(rootView: StackView(
             store: store,
@@ -754,6 +764,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.title = "Settings"
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
+        let toolbar = NSToolbar(identifier: "SettingsWindowToolbar")
+        toolbar.showsBaselineSeparator = false
+        window.toolbar = toolbar
+        window.toolbarStyle = .unified
         window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
         window.center()
@@ -782,6 +796,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.fitSettingsWindow(toContentHeight: height)
             })
         hosting.sizingOptions = [.intrinsicContentSize]
+        // The tab strip owns the title-bar band; no inset for the toolbar.
+        hosting.safeAreaRegions = []
         window.contentView = hosting
         window.setContentSize(hosting.fittingSize)
         window.delegate = self

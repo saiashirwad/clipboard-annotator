@@ -74,6 +74,7 @@ struct SettingsView: View {
         }
         .frame(width: Self.width)
         .background(Color(nsColor: .windowBackgroundColor))
+        .ignoresSafeArea()
         .overlayScrollers()
     }
 
@@ -89,7 +90,7 @@ struct SettingsView: View {
 
     private var profileList: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SettingsCaption("Active profile")
+            SettingsCaption("Profiles")
             SettingsCard {
                 VStack(spacing: 0) {
                     ForEach(profileEditor.profiles) { profile in
@@ -104,17 +105,21 @@ struct SettingsView: View {
                 }
                 .padding(6)
                 Divider()
-                HStack(spacing: 2) {
+                HStack(spacing: 4) {
                     Button {
                         _ = ProfileDialogs.saveAsNew(profileEditor)
                     } label: {
                         Image(systemName: "plus")
+                            .font(.system(size: 11, weight: .semibold))
+                            .frame(width: 20, height: 18)
                     }
                     .help("New profile from this draft…")
                     .accessibilityLabel("New profile")
 
                     Button(action: deleteProfile) {
                         Image(systemName: "minus")
+                            .font(.system(size: 11, weight: .semibold))
+                            .frame(width: 20, height: 18)
                     }
                     .disabled(!profileEditor.canDelete || profileEditor.isDirty)
                     .help(profileEditor.isDirty
@@ -128,7 +133,7 @@ struct SettingsView: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 5)
             }
-            Text("The active profile shapes what Copy all as Markdown produces.")
+            Text("The selected profile is active. It shapes what Copy produces.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -137,14 +142,7 @@ struct SettingsView: View {
 
     private var profileEditorPane: some View {
         VStack(alignment: .leading, spacing: 14) {
-            SettingsCard {
-                SettingsRow("Name") {
-                    TextField("Profile name", text: $profileEditor.draft.name)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 220)
-                        .accessibilityLabel("Profile name")
-                }
-            }
+            ProfileNameField(text: $profileEditor.draft.name)
 
             VStack(alignment: .leading, spacing: 8) {
                 SettingsCaption("Preamble")
@@ -199,28 +197,30 @@ struct SettingsView: View {
 
     @ViewBuilder
     private var saveBar: some View {
-        HStack(spacing: 10) {
-            if profileEditor.isDirty {
+        if profileEditor.isDirty {
+            HStack(spacing: 10) {
                 Image(systemName: "pencil.circle.fill")
                     .foregroundStyle(.tint)
-                Text("Unsaved changes to “\(profileEditor.storedProfile?.name ?? "Profile")”")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                Text("Unsaved changes")
+                    .font(.callout.weight(.medium))
                 Spacer()
                 Button("Revert", action: profileEditor.revert)
                 Button("Save", action: saveProfile)
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut("s", modifiers: .command)
-            } else {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-                Text("Saved")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                Spacer()
             }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.accentColor.opacity(0.08))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(Color.accentColor.opacity(0.2), lineWidth: 1)
+            )
+            .transition(.opacity.combined(with: .move(edge: .bottom)))
         }
-        .frame(height: 30)
     }
 
     // MARK: - Shortcuts
@@ -393,7 +393,7 @@ private struct SettingsTabBar: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 64)
+        .frame(height: 52)
         .background(Color.primary.opacity(0.025))
     }
 }
@@ -407,15 +407,15 @@ private struct SettingsTabButton: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 3) {
+            VStack(spacing: 2) {
                 Image(systemName: tab.icon)
-                    .font(.system(size: 19, weight: .regular))
-                    .frame(height: 24)
+                    .font(.system(size: 17, weight: .regular))
+                    .frame(height: 22)
                 Text(tab.title)
-                    .font(.system(size: 11))
+                    .font(.system(size: 10.5, weight: isSelected ? .medium : .regular))
             }
             .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
-            .frame(width: 78, height: 50)
+            .frame(width: 76, height: 44)
             .background(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(Color.primary.opacity(isSelected ? 0.08 : hovering ? 0.04 : 0))
@@ -425,6 +425,27 @@ private struct SettingsTabButton: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+    }
+}
+
+/// The profile's name, set as an editable title rather than a form field.
+private struct ProfileNameField: View {
+    @Binding var text: String
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            TextField("Profile name", text: $text)
+                .textFieldStyle(.plain)
+                .font(.system(size: 22, weight: .semibold))
+                .focused($focused)
+                .accessibilityLabel("Profile name")
+            Rectangle()
+                .fill(focused ? Color.accentColor.opacity(0.6) : Color.primary.opacity(0.1))
+                .frame(height: 1)
+        }
+        .padding(.horizontal, 2)
+        .animation(.easeOut(duration: 0.15), value: focused)
     }
 }
 

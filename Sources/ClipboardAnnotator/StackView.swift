@@ -7,7 +7,6 @@ struct StackView: View {
     @Bindable var settings: AppSettings
     let onSelectProfile: (UUID) -> Void
 
-    @State private var showingMarkdown = false
     @State private var justCopied = false
     @State private var copyFeedbackID: UUID?
 
@@ -26,7 +25,7 @@ struct StackView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            sessionBar
+            header
             Divider()
 
             Group {
@@ -34,8 +33,6 @@ struct StackView: View {
                     emptyState
                 } else if entries.isEmpty {
                     clearedState
-                } else if showingMarkdown {
-                    markdownPreview
                 } else {
                     list
                 }
@@ -51,6 +48,8 @@ struct StackView: View {
             footer
         }
         .frame(minWidth: 640, minHeight: 340)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .ignoresSafeArea()
         .task(id: copyFeedbackID) {
             guard let copyFeedbackID else { return }
             do {
@@ -64,51 +63,132 @@ struct StackView: View {
         }
     }
 
-    private var sessionBar: some View {
+    // MARK: - Header
+
+    /// Sits in the title-bar strip: the session as a title, the profile as a
+    /// quiet pill, and the one prominent action.
+    private var header: some View {
         let renderedSession = store.currentSession
         let renderedSessionID = renderedSession.id
 
-        return HStack(spacing: 8) {
-            Picker(
-                "Session",
-                selection: Binding(
-                    get: { store.currentSessionID },
-                    set: { store.mutate(.switchSession(sessionID: $0)) }
-                )
-            ) {
-                ForEach(facts.sessions) { session in
-                    Text("\(session.name) (\(session.annotationCount))")
-                        .tag(session.id)
+        return HStack(spacing: 10) {
+            sessionMenu(renderedSession)
+
+            Spacer(minLength: 12)
+
+            profileMenu
+
+            Button {
+                if CurrentSessionExport.copy(store: store, settings: settings) {
+                    justCopied = true
+                    copyFeedbackID = UUID()
                 }
-            }
-            .frame(maxWidth: 220)
-
-            Picker(
-                "Profile",
-                selection: Binding(
-                    get: { settings.activeProfileID },
-                    set: { onSelectProfile($0) }
-                )
-            ) {
-                ForEach(settings.profiles) { profile in
-                    Text(profile.name).tag(profile.id)
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: justCopied ? "checkmark" : "doc.on.clipboard")
+                        .font(.system(size: 10, weight: .semibold))
+                    Text(justCopied ? "Copied" : "Copy")
+                        .font(.system(size: 12, weight: .semibold))
                 }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 11)
+                .padding(.vertical, 5)
+                .frame(minWidth: 74)
+                .background(Capsule().fill(entries.isEmpty ? Color.accentColor.opacity(0.4) : Color.accentColor))
+                .contentShape(Capsule())
             }
-            .frame(maxWidth: 180)
-            .help("Active prompt profile")
-
-            Spacer()
-
-            Button("New…", action: createSession)
-            Button("Rename…") { renameSession(sessionID: renderedSessionID) }
-            Button("Delete…") { deleteSession(sessionID: renderedSessionID) }
-                .disabled(!facts.canDelete)
+            .buttonStyle(.plain)
+            .keyboardShortcut("c", modifiers: [.command, .shift])
+            .disabled(entries.isEmpty)
+            .animation(.easeOut(duration: 0.15), value: justCopied)
+            .help("Copy the session as Markdown, shaped by the active profile (⇧⌘C)")
         }
-        .controlSize(.small)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(.bar)
+        .padding(.leading, 84) // clear of the traffic lights
+        .padding(.trailing, 16)
+        .frame(height: 52)
+        .background(Color.primary.opacity(0.025))
+        .id(renderedSessionID)
     }
+
+    private func sessionMenu(_ session: Session) -> some View {
+        Menu {
+            Section("Sessions") {
+                ForEach(facts.sessions) { item in
+                    Button {
+                        store.mutate(.switchSession(sessionID: item.id))
+                    } label: {
+                        if item.isCurrent {
+                            Label("\(item.name)  (\(item.annotationCount))", systemImage: "checkmark")
+                        } else {
+                            Text("\(item.name)  (\(item.annotationCount))")
+                        }
+                    }
+                }
+            }
+            Divider()
+            Button("New Session…", action: createSession)
+            Button("Rename “\(session.name)”…") { renameSession(sessionID: session.id) }
+            Button("Delete “\(session.name)”…", role: .destructive) {
+                deleteSession(sessionID: session.id)
+            }
+            .disabled(!facts.canDelete)
+        } label: {
+            HStack(spacing: 6) {
+                Text(session.name)
+                    .font(.system(size: 15, weight: .semibold))
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Switch, create, rename, or delete sessions")
+    }
+
+    private var profileMenu: some View {
+        Menu {
+            ForEach(settings.profiles) { profile in
+                Button {
+                    onSelectProfile(profile.id)
+                } label: {
+                    if profile.id == settings.activeProfileID {
+                        Label(profile.name, systemImage: "checkmark")
+                    } else {
+                        Text(profile.name)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "text.quote")
+                    .font(.system(size: 10, weight: .semibold))
+                Text(settings.activeProfile.name)
+                    .font(.system(size: 12, weight: .medium))
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .bold))
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(Capsule().fill(Color.primary.opacity(0.06)))
+            .contentShape(Capsule())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Active prompt profile")
+    }
+
+    // MARK: - States
 
     private var emptyState: some View {
         VStack(spacing: 16) {
@@ -181,8 +261,9 @@ struct StackView: View {
                         ))
                     }
                 )
-                .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 12))
-                .listRowSeparator(.visible)
+                .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
             }
             .onMove { offsets, destination in
                 let ids = renderedEntries.map(\.id)
@@ -212,70 +293,51 @@ struct StackView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
+        .safeAreaPadding(.vertical, 10)
     }
 
-    private var markdownPreview: some View {
-        PromptPreview(session: store.currentSession, profile: settings.activeProfile)
-    }
+    // MARK: - Footer
 
     private var footer: some View {
         let renderedSession = store.currentSession
         let renderedSessionID = renderedSession.id
 
-        return HStack(spacing: 8) {
-            Text("\(renderedSession.name): \(entries.count) annotation\(entries.count == 1 ? "" : "s")")
+        return HStack(spacing: 6) {
+            Text("\(entries.count) annotation\(entries.count == 1 ? "" : "s")")
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
 
             Spacer()
 
-            Picker("View", selection: $showingMarkdown) {
-                Text("List").tag(false)
-                Text("Markdown").tag(true)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .fixedSize()
-            .disabled(entries.isEmpty)
-
             if let undo = facts.undo {
-                Button(undo.title) {
+                Button {
                     store.mutate(.undoClear)
+                } label: {
+                    Label(undo.title, systemImage: "arrow.uturn.backward")
                 }
                 .keyboardShortcut("z", modifiers: [.command])
             }
 
-            Button("Clear \(renderedSession.name)") {
+            Button {
                 store.mutate(.clearSession(sessionID: renderedSessionID))
+            } label: {
+                Label("Clear", systemImage: "trash")
             }
             .keyboardShortcut(.delete, modifiers: [.control, .command])
             .disabled(entries.isEmpty)
-
-            Button {
-                if CurrentSessionExport.copy(store: store, settings: settings) {
-                    justCopied = true
-                    copyFeedbackID = UUID()
-                }
-            } label: {
-                Label(
-                    justCopied ? "Copied" : "Copy Markdown",
-                    systemImage: justCopied ? "checkmark" : "doc.on.clipboard"
-                )
-                .frame(minWidth: 108)
-            }
-            .keyboardShortcut("c", modifiers: [.command, .shift])
-            .buttonStyle(.borderedProminent)
-            .disabled(entries.isEmpty)
-            .animation(.easeOut(duration: 0.15), value: justCopied)
+            .help("Clear this session. Undo with ⌘Z.")
         }
+        .buttonStyle(.borderless)
         .controlSize(.small)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(.bar)
+        .padding(.horizontal, 16)
+        .frame(height: 30)
+        .background(Color.primary.opacity(0.025))
     }
 
     private func errorBanner(_ error: AnnotationStoreError) -> some View {
         HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
             Text(annotationStoreErrorMessage(error))
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -286,7 +348,7 @@ struct StackView: View {
                     .controlSize(.small)
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 16)
         .padding(.vertical, 6)
         .background(Color.orange.opacity(0.08))
     }
@@ -332,153 +394,6 @@ struct StackView: View {
 
 }
 
-private struct PromptPreview: View {
-    let session: Session
-    let profile: Profile
-
-    var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 22) {
-                if !profile.preamble.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    InlineMarkdownText(profile.preamble)
-                        .font(.body)
-                        .lineSpacing(3)
-                }
-
-                if profile.includeHeading {
-                    Text("Reading notes — \(PromptPreviewFormatting.date(session.createdAt))")
-                        .font(.title2.weight(.semibold))
-                }
-
-                ForEach(Array(session.entries.enumerated()), id: \.element.id) { index, entry in
-                    PromptPreviewEntry(
-                        number: index + 1,
-                        entry: entry,
-                        metadata: PromptPreviewFormatting.metadata(for: entry, profile: profile)
-                    )
-                }
-            }
-            .frame(maxWidth: 720, alignment: .leading)
-            .padding(.horizontal, 24)
-            .padding(.vertical, 22)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .textSelection(.enabled)
-    }
-
-}
-
-private enum PromptPreviewFormatting {
-    static func date(_ date: Date) -> String {
-        date.formatted(Date.FormatStyle(
-            date: .long,
-            time: .omitted,
-            locale: .current,
-            calendar: .current,
-            timeZone: .current
-        ))
-    }
-
-    static func metadata(
-        for entry: ClipboardAnnotatorDomain.Annotation,
-        profile: Profile
-    ) -> [String] {
-        var facts: [String] = []
-        if profile.includeApplication {
-            append(entry.provenance.application.name, to: &facts)
-        }
-        if profile.includeWindow {
-            append(entry.provenance.windowTitle, to: &facts)
-        }
-        if profile.includeLink {
-            if let url = entry.provenance.url {
-                append(display(url), to: &facts)
-            }
-            if let directory = entry.provenance.workingDirectory {
-                append(abbreviatedPath(directory), to: &facts)
-            }
-        }
-        if profile.includeTimestamps {
-            facts.append(entry.createdAt.formatted(date: .omitted, time: .shortened))
-        }
-        return facts
-    }
-
-    private static func append(_ value: String?, to facts: inout [String]) {
-        guard let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return
-        }
-        facts.append(value)
-    }
-
-    private static func display(_ url: URL) -> String {
-        url.isFileURL ? abbreviatedPath(url) : url.absoluteString
-    }
-
-    private static func abbreviatedPath(_ url: URL) -> String {
-        (url.path as NSString).abbreviatingWithTildeInPath
-    }
-}
-
-private struct PromptPreviewEntry: View {
-    let number: Int
-    let entry: ClipboardAnnotatorDomain.Annotation
-    let metadata: [String]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("\(number)")
-                .font(.headline.weight(.semibold).monospacedDigit())
-
-            if case let .selection(quote) = entry.subject {
-                Text(quote)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .lineSpacing(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(10)
-                    .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 6))
-                    .overlay(alignment: .leading) {
-                        Rectangle()
-                            .fill(Color.accentColor.opacity(0.65))
-                            .frame(width: 3)
-                            .padding(.vertical, 5)
-                    }
-            }
-
-            InlineMarkdownText(entry.note)
-                .font(.body)
-                .lineSpacing(3)
-
-            if !metadata.isEmpty {
-                Text(metadata.joined(separator: " · "))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-private struct InlineMarkdownText: View {
-    let source: String
-
-    init(_ source: String) {
-        self.source = source
-    }
-
-    var body: some View {
-        if let attributed = try? AttributedString(
-            markdown: source,
-            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        ) {
-            Text(attributed)
-        } else {
-            Text(source)
-        }
-    }
-}
-
 private struct StackRow: View {
     let index: Int
     let entry: ClipboardAnnotatorDomain.Annotation
@@ -486,6 +401,7 @@ private struct StackRow: View {
     let onDelete: () -> Void
 
     @State private var hovering = false
+    @FocusState private var noteFocused: Bool
 
     private var quote: String {
         guard case let .selection(quote) = entry.subject else { return "" }
@@ -493,45 +409,51 @@ private struct StackRow: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Text("\(index + 1)")
-                    .font(.caption2.weight(.bold).monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .frame(minWidth: 18, minHeight: 18)
-                    .background(Circle().fill(Color.primary.opacity(0.07)))
+                    .font(.system(size: 11, weight: .bold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(.tint)
+                    .frame(minWidth: 20, minHeight: 20)
+                    .background(Circle().fill(Color.accentColor.opacity(0.12)))
 
                 Text(entry.provenance.application.name)
-                    .font(.caption.weight(.medium))
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
+
+                if let window = entry.provenance.windowTitle?.nonblank {
+                    Text(window)
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+
+                Spacer(minLength: 8)
 
                 Text(entry.createdAt.formatted(date: .omitted, time: .shortened))
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.tertiary)
 
-                Spacer()
-
                 Button(action: onDelete) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.tertiary)
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 18, height: 18)
+                        .background(Circle().fill(Color.primary.opacity(0.07)))
                 }
                 .buttonStyle(.plain)
                 .help("Remove")
+                .accessibilityLabel("Remove annotation \(index + 1)")
                 .opacity(hovering ? 1 : 0)
             }
 
             if !quote.isEmpty {
-                Text(quote)
-                    .font(.callout)
-                    .lineSpacing(1)
-                    .lineLimit(4)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                HighlightedPassage(text: quote)
             }
 
             TextField(
-                "Add a note…",
+                quote.isEmpty ? "Write a thought…" : "Add a note about this passage…",
                 text: Binding(
                     get: { entry.note },
                     set: { newValue in
@@ -542,9 +464,49 @@ private struct StackRow: View {
             )
             .textFieldStyle(.plain)
             .font(.body)
-            .lineLimit(1...6)
+            .lineSpacing(2)
+            .lineLimit(1...8)
+            .focused($noteFocused)
         }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(
+                    noteFocused ? Color.accentColor.opacity(0.5) : Color.primary.opacity(0.08),
+                    lineWidth: 1
+                )
+        )
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.12), value: hovering)
+    }
+}
+
+/// A captured passage drawn the way a highlighter marks a page: the tint
+/// follows the lines of text instead of boxing them.
+private struct HighlightedPassage: View {
+    let text: String
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        Text(marked)
+            .font(.callout)
+            .lineSpacing(5)
+            .lineLimit(6)
+            .foregroundStyle(.primary.opacity(0.85))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .textSelection(.enabled)
+    }
+
+    private var marked: AttributedString {
+        var attributed = AttributedString(text)
+        attributed.backgroundColor = colorScheme == .dark
+            ? Color(red: 1.0, green: 0.80, blue: 0.25).opacity(0.28)
+            : Color(red: 1.0, green: 0.86, blue: 0.30).opacity(0.5)
+        return attributed
     }
 }
