@@ -8,6 +8,7 @@ struct StackView: View {
 
     @State private var showingMarkdown = false
     @State private var justCopied = false
+    @State private var copyFeedbackID: UUID?
 
     private var entries: [ClipboardAnnotatorDomain.Annotation] { store.currentEntries }
     private var facts: SessionUIFacts {
@@ -49,6 +50,17 @@ struct StackView: View {
             footer
         }
         .frame(minWidth: 460, minHeight: 340)
+        .task(id: copyFeedbackID) {
+            guard let copyFeedbackID else { return }
+            do {
+                try await Task.sleep(for: .seconds(1.5))
+            } catch {
+                return
+            }
+            guard self.copyFeedbackID == copyFeedbackID else { return }
+            justCopied = false
+            self.copyFeedbackID = nil
+        }
     }
 
     private var sessionBar: some View {
@@ -234,7 +246,7 @@ struct StackView: View {
             Button {
                 if CurrentSessionExport.copy(store: store, settings: settings) {
                     justCopied = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { justCopied = false }
+                    copyFeedbackID = UUID()
                 }
             } label: {
                 Label(

@@ -6,6 +6,7 @@ struct SettingsView: View {
     @State private var trusted = PermissionCheck.isTrusted
     @State private var microphoneAuthorized = PermissionCheck.isMicrophoneAuthorized
     @State private var voiceModelState: VoiceModelState = .checking
+    @State private var voiceModelDownloadID: UUID?
 
     var body: some View {
         Form {
@@ -87,6 +88,10 @@ struct SettingsView: View {
                 microphoneAuthorized = PermissionCheck.isMicrophoneAuthorized
             }
         }
+        .task(id: voiceModelDownloadID) {
+            guard let voiceModelDownloadID else { return }
+            await downloadVoiceModel(id: voiceModelDownloadID)
+        }
     }
 
     private func shortcutRow(_ title: String, combo: Binding<KeyCombo>) -> some View {
@@ -130,13 +135,22 @@ struct SettingsView: View {
 
     private func downloadVoiceModel() {
         voiceModelState = .downloading
-        Task {
-            do {
-                try await VoiceAnnotationService.shared.downloadVoiceModel()
-                voiceModelState = .ready
-            } catch {
-                voiceModelState = .failed
-            }
+        voiceModelDownloadID = UUID()
+    }
+
+    private func downloadVoiceModel(id: UUID) async {
+        do {
+            try await VoiceAnnotationService.shared.downloadVoiceModel()
+            try Task.checkCancellation()
+            guard voiceModelDownloadID == id else { return }
+            voiceModelState = .ready
+            voiceModelDownloadID = nil
+        } catch is CancellationError {
+            return
+        } catch {
+            guard !Task.isCancelled, voiceModelDownloadID == id else { return }
+            voiceModelState = .failed
+            voiceModelDownloadID = nil
         }
     }
 }
