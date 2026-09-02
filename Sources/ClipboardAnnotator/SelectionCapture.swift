@@ -28,7 +28,7 @@ enum SelectionCapture {
             rect = axRect
         }
         if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            text = copyViaKeystroke() ?? ""
+            text = copyViaKeystroke(processIdentifier: app?.processIdentifier ?? 0) ?? ""
         }
 
         return CapturedSelection(
@@ -82,29 +82,35 @@ enum SelectionCapture {
 
     // MARK: - Clipboard fallback
 
-    private static func copyViaKeystroke() -> String? {
-        let pb = NSPasteboard.general
-        let saved = snapshot(pb)
-        let before = pb.changeCount
+    private static func copyViaKeystroke(processIdentifier: pid_t) -> String? {
+        let pasteboard = NSPasteboard.general
+        let saved = snapshot(pasteboard)
+        let changeCountBeforeCopy = pasteboard.changeCount
 
         waitForModifierRelease()
-        postCommandC()
+        postCommandKey(
+            8,
+            processIdentifier: processIdentifier > 0 ? processIdentifier : nil
+        ) // kVK_ANSI_C
 
+        var copiedChangeCount: Int?
         var result: String?
         let deadline = Date().addingTimeInterval(0.7)
         while Date() < deadline {
-            if pb.changeCount != before {
-                result = pb.string(forType: .string)
+            if pasteboard.changeCount != changeCountBeforeCopy {
+                copiedChangeCount = pasteboard.changeCount
+                result = pasteboard.string(forType: .string)
                 break
             }
             RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.02))
         }
 
-        restore(saved, to: pb)
+        // Do not overwrite clipboard data changed after the copy we observed.
+        if let copiedChangeCount, pasteboard.changeCount == copiedChangeCount {
+            restore(saved, to: pasteboard)
+        }
         return result
     }
-
-    private static func postCommandC() { postCommandKey(8) }  // kVK_ANSI_C
 
     /// Sends ⌘V to the app that was frontmost when export began.
     static func paste(into processIdentifier: pid_t) {
