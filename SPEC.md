@@ -123,7 +123,9 @@ Each profile contains:
 - Name.
 - Custom preamble text.
 - Include heading.
-- Include provenance.
+- Include application name.
+- Include window title.
+- Include link or working directory.
 - Include timestamps.
 - Clear current session after export.
 
@@ -150,7 +152,7 @@ Ship three profiles:
 
 1. **Coherent** — active by default.
    - Heading: on.
-   - Provenance: on.
+   - Application, window title, and link or working directory: on.
    - Timestamps: on.
    - Clear after export: off.
    - Preamble:
@@ -159,7 +161,7 @@ Ship three profiles:
 
 2. **Point by Point**
    - Heading: on.
-   - Provenance: on.
+   - Application, window title, and link or working directory: on.
    - Timestamps: on.
    - Clear after export: off.
    - Preamble:
@@ -169,7 +171,7 @@ Ship three profiles:
 3. **Plain**
    - Empty preamble.
    - Heading: off.
-   - Provenance: off.
+   - Application, window title, and link or working directory: off.
    - Timestamps: off.
    - Clear after export: off.
 
@@ -232,7 +234,9 @@ struct Profile: Identifiable, Codable, Hashable {
     var id: UUID = UUID()
     var name: String
     var preamble: String
-    var includeProvenance: Bool
+    var includeApplication: Bool
+    var includeWindow: Bool
+    var includeLink: Bool
     var includeTimestamps: Bool
     var includeHeading: Bool
     var clearSessionAfterExport: Bool
@@ -662,8 +666,8 @@ Rules:
 - Heading text remains `Reading notes — <localized long date>` when enabled.
 - Provenance metadata uses one stable fact order: application name, optional window title, optional URL, optional abbreviated working-directory path, optional timestamp.
 - Emit every available enabled fact without classifying the source as a browser, terminal, or generic app.
-- `includeProvenance == false` omits app, title, URL, and directory.
-- `includeTimestamps` controls the time independently. If provenance is off but timestamps are on, emit a metadata line containing only the time.
+- `includeApplication`, `includeWindow`, and `includeLink` independently control application, window-title, and URL/directory facts.
+- `includeTimestamps` controls the time independently. If all source facts are off but timestamps are on, emit a metadata line containing only the time.
 - Never emit empty separators or a blank metadata line.
 
 ## Keyboard shortcut library
