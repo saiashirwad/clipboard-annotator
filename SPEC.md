@@ -2,7 +2,7 @@
 
 ## Status
 
-Design specification for review. This document describes a future implementation; it does not implement it.
+Migration specification. Native sessions, standalone capture, transactional persistence, voice lifecycle safety, and asynchronous provenance are implemented. Prompt profiles and first-run setup remain future work.
 
 ## Changes since the verbal design sign-off
 

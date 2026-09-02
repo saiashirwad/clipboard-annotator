@@ -16,7 +16,7 @@ about it. Notes collect in a stack. Paste the stack anywhere as Markdown.
 | `⌃⌘⌫` | Clear the stack                                  |
 | `⌘Z`  | Undo the last clear                              |
 
-The four global shortcuts are rebindable in Settings.
+All six global shortcuts are rebindable in Settings.
 
 ## Build and install
 
