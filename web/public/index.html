@@ -96,7 +96,8 @@
     .byline .who { display: flex; flex-direction: column; line-height: 1.25; }
     .byline .name { font-weight: 600; font-size: 0.95rem; }
     .byline .handle { font-size: 0.9rem; color: var(--fg-3); }
-    .byline:hover .handle { color: var(--accent); }
+    .byline .handle b { font-weight: 600; color: var(--fg-2); }
+    .byline:hover .handle b { color: var(--accent); }
     .side footer {
       font-size: 0.9rem; color: var(--fg-3);
       display: flex; flex-wrap: wrap; gap: 6px 18px;
@@ -315,26 +316,23 @@
     @media (prefers-reduced-motion: reduce) {
       .scene * { transition: none !important; animation: none !important; }
     }
-    @media (max-width: 900px) {
+    @media (max-width: 1240px) {
+      .split { grid-template-columns: minmax(300px, 34%) 1fr; }
+      .side { padding: 24px 28px; }
+      .hero .lede { font-size: 1.05rem; }
+      .hero .lede .hook { font-size: 1.2rem; }
+      .actions .btn { flex: 1 1 auto; justify-content: center; }
+      .scene { font-size: clamp(11px, min(1.25vw, 2vh), 18px); }
+    }
+    @media (max-width: 980px) {
       .split { grid-template-columns: 1fr; min-height: 0; }
       .side { padding: 20px 24px; }
       .hero { padding: 36px 0 28px; }
+      .actions .btn { flex: 0 1 auto; }
       .hero h1 { font-size: 2.4rem; }
-      .byline {
-      display: inline-flex; align-items: center; gap: 12px;
-      margin-top: 28px; padding: 8px 14px 8px 8px;
-      border: 1px solid var(--line); border-radius: 999px;
-      background: var(--bg-2);
-      transition: background 0.15s ease;
-    }
-    .byline:hover { background: var(--line); }
-    .byline img { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; display: block; }
-    .byline .who { display: flex; flex-direction: column; line-height: 1.2; }
-    .byline .name { font-weight: 600; font-size: 0.95rem; }
-    .byline .handle { font-size: 0.85rem; color: var(--fg-3); }
-    .side footer { order: 3; padding-top: 16px; }
+      .side footer { order: 3; padding-top: 16px; }
       .stage { border-left: 0; border-top: 1px solid var(--line); }
-      .scene { font-size: 9px; height: 38em; min-height: 0; }
+      .scene { font-size: clamp(10px, 1.5vw, 14px); height: 78vh; min-height: 36em; }
       .win { left: 1em; right: 1em; }
       .menubar .left span:not(.app) { display: none; }
       .msgs { padding: 1em 0.8em 0.6em; }
@@ -360,7 +358,7 @@
         <p class="fine">macOS 14 or later, Apple Silicon. Free.</p>
         <a class="byline" href="https://x.com/texoport__">
           <img src="/avatar.jpg" alt="">
-          <span class="who"><span class="name">Used this? Have thoughts?</span><span class="handle">I'm @texoport__ on X. DMs are open.</span></span>
+          <span class="who"><span class="name">Used this? Have thoughts?</span><span class="handle">I'm <b>@texoport__</b> on X. DMs are open.</span></span>
         </a>
       </div>
       <footer>
