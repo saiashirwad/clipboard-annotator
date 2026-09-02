@@ -5,7 +5,7 @@ cd "$(dirname "$0")"
 
 APP_NAME="Clipboard Annotator"
 BUNDLE_ID="com.texoport.ClipboardAnnotator"
-BUILD_DIR=".build/release"
+BIN_DIR=$(swift build -c release --show-bin-path)
 DIST="dist/${APP_NAME}.app"
 
 echo "==> Building"
@@ -14,7 +14,7 @@ swift build -c release
 echo "==> Assembling ${DIST}"
 rm -rf "dist"
 mkdir -p "${DIST}/Contents/MacOS" "${DIST}/Contents/Resources"
-cp "${BUILD_DIR}/ClipboardAnnotator" "${DIST}/Contents/MacOS/ClipboardAnnotator"
+cp "${BIN_DIR}/ClipboardAnnotator" "${DIST}/Contents/MacOS/ClipboardAnnotator"
 cp "Resources/Info.plist" "${DIST}/Contents/Info.plist"
 if [ -f "Resources/AppIcon.icns" ]; then
     cp "Resources/AppIcon.icns" "${DIST}/Contents/Resources/AppIcon.icns"
@@ -24,9 +24,15 @@ fi
 # A stable signing identity keeps the Accessibility grant across rebuilds.
 IDENTITY="${CODESIGN_IDENTITY:-}"
 if [ -z "$IDENTITY" ]; then
-    IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null \
-        | grep -m1 -E "Developer ID Application|Apple Development" \
+    IDENTITIES=$(security find-identity -v -p codesigning 2>/dev/null || true)
+    IDENTITY=$(printf '%s\n' "$IDENTITIES" \
+        | grep -m1 "Developer ID Application" \
         | sed -E 's/.*"(.*)".*/\1/' || true)
+    if [ -z "$IDENTITY" ]; then
+        IDENTITY=$(printf '%s\n' "$IDENTITIES" \
+            | grep -m1 "Apple Development" \
+            | sed -E 's/.*"(.*)".*/\1/' || true)
+    fi
 fi
 if [ -n "$IDENTITY" ]; then
     echo "==> Signing with: ${IDENTITY}"
