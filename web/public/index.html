@@ -66,8 +66,8 @@
       display: flex; flex-direction: column;
       padding: 28px 44px 28px 48px;
     }
-    .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; }
-    .brand img { width: 28px; height: 28px; }
+    .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 1.05rem; line-height: 1; }
+    .brand img { width: 1.15em; height: 1.15em; }
     .hero { margin: auto 0; padding: 48px 0; }
     .hero h1 { font-size: clamp(2.2rem, 3.6vw, 3.5rem); }
     .hero .lede { font-size: 1.15rem; color: var(--fg-2); margin: 1.1em 0 1.7em; max-width: 26em; }
@@ -100,7 +100,7 @@
     .scene {
       position: relative;
       width: 100%; height: 100%;
-      background: var(--desk);
+      background: #2a6fe0 url(/desk.svg) center / cover no-repeat;
       overflow: hidden;
       font-size: clamp(8.5px, min(1.2vw, 2vh), 18px);
       line-height: 1.5;
@@ -108,17 +108,30 @@
       user-select: none;
     }
 
-    /* menu bar */
+    .scene::before {
+      content: ""; position: absolute; inset: 0; pointer-events: none;
+      background: rgba(8, 14, 40, 0);
+    }
+    @media (prefers-color-scheme: dark) {
+      .scene::before { background: rgba(8, 14, 40, 0.38); }
+    }
+
+    /* menu bar: transparent over the wallpaper, like macOS */
     .menubar {
       position: absolute; inset: 0 0 auto 0; z-index: 5;
-      display: flex; align-items: center; justify-content: flex-end; gap: 1.2em;
-      height: 2.3em; padding: 0 1.2em;
-      background: var(--bg);
-      border-bottom: 1px solid var(--line);
-      color: var(--fg-3); font-size: 0.85em;
+      display: flex; align-items: center; justify-content: space-between; gap: 1.2em;
+      height: 2.2em; padding: 0 1.1em 0 1em;
+      color: #fff; font-size: 0.86em;
+      text-shadow: 0 0.5px 1.5px rgba(0,0,0,0.35);
+      background: transparent;
     }
+    .menubar .left, .menubar .right { display: flex; align-items: center; gap: 1.15em; white-space: nowrap; }
+    .menubar .left .app { font-weight: 700; }
+    .menubar svg { display: block; fill: #fff; filter: drop-shadow(0 0.5px 1px rgba(0,0,0,0.35)); }
+    .menubar .apple { width: 1.05em; height: 1.05em; }
+    .menubar .glyph { height: 1.05em; width: auto; }
     .menubar .item { display: flex; align-items: center; gap: 0.4em; }
-    .menubar .item img { width: 1.35em; height: 1.35em; }
+    .menubar .item .sp { width: 1.3em; height: 1.3em; }
     .menubar .badge {
       min-width: 1.5em; height: 1.5em; padding: 0 0.4em;
       border-radius: 1em; background: var(--accent); color: var(--accent-fg);
@@ -132,13 +145,13 @@
 
     /* browser window showing chatgpt.com */
     .win {
-      position: absolute; left: 1.6em; right: 1.6em; top: 3.5em; bottom: 1.4em;
+      position: absolute; left: 1.6em; right: 1.6em; top: 3.4em; bottom: 1.4em;
       background: var(--bg);
       border: 1px solid var(--line);
       border-radius: 10px;
       overflow: hidden;
       display: flex; flex-direction: column;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.10);
+      box-shadow: 0 18px 50px rgba(10, 30, 90, 0.35), 0 0 0 0.5px rgba(0,0,0,0.15);
     }
     .win .bar {
       display: flex; align-items: center; gap: 0.6em;
@@ -156,13 +169,13 @@
     }
     .win .bar .sp { width: 3.2em; }
     .msgs {
-      flex: 1; overflow: hidden;
+      flex: 1; overflow: hidden; position: relative;
       padding: 1em 1.2em 0.6em;
       scroll-behavior: smooth;
     }
     .col { max-width: 44em; margin: 0 auto; display: flex; flex-direction: column; gap: 1.1em; }
     .user {
-      align-self: flex-end; max-width: 72%;
+      align-self: flex-end; max-width: 78%;
       background: var(--bg-2); color: var(--fg);
       border-radius: 1.3em; padding: 0.55em 1em;
       font-size: 0.95em; line-height: 1.45; white-space: pre-wrap;
@@ -170,24 +183,24 @@
     .user.pending { opacity: 0; transform: translateY(8px); transition: opacity 0.25s ease, transform 0.25s ease; }
     .user.on { opacity: 1; transform: none; }
     .user .dim { color: var(--fg-3); }
+    .user .q { color: var(--fg-2); }
+    .user .meta { color: var(--fg-3); font-style: italic; font-size: 0.92em; }
     .assistant { color: var(--fg-2); font-size: 0.95em; line-height: 1.55; }
     .assistant p { margin: 0 0 0.8em; }
-    .assistant .h { color: var(--fg); font-weight: 600; margin-bottom: 0.5em; }
+    .assistant .h { color: var(--fg); font-weight: 600; margin: 0.4em 0 0.5em; }
+    .assistant em { font-style: italic; }
     .assistant .typing i { display: inline-block; width: 0.5em; height: 0.5em; border-radius: 50%; background: var(--fg); margin-right: 0.15em; animation: pulse 1s ease-in-out infinite; }
     .assistant .typing i:nth-child(2) { animation-delay: 0.15s; }
     .assistant .typing i:nth-child(3) { animation-delay: 0.3s; }
     @keyframes pulse { 50% { opacity: 0.25; } }
     .assistant .w { opacity: 0; transition: opacity 0.2s ease; }
     .assistant .w.on { opacity: 1; }
-    .sel {
-      background-image: linear-gradient(var(--mark), var(--mark));
-      background-repeat: no-repeat;
-      background-size: 0% 100%;
-      transition: background-size 0.5s ease, color 0.3s ease;
-      border-radius: 2px;
-      -webkit-box-decoration-break: clone; box-decoration-break: clone;
+    .col { position: relative; z-index: 0; isolation: isolate; }
+    .hl {
+      position: absolute; z-index: -1; pointer-events: none;
+      background: #b4d5fe; border-radius: 2px;
     }
-    .sel.on { background-size: 100% 100%; color: var(--mark-fg); }
+    @media (prefers-color-scheme: dark) { .hl { background: rgba(80, 140, 255, 0.42); } }
 
     .composer-wrap { padding: 0.5em 1.2em 0.9em; }
     .composer {
@@ -294,6 +307,7 @@
       .stage { border-left: 0; border-top: 1px solid var(--line); }
       .scene { font-size: 9px; height: 38em; min-height: 0; }
       .win { left: 1em; right: 1em; }
+      .menubar .left span:not(.app) { display: none; }
       .msgs { padding: 1em 0.8em 0.6em; }
       .user { max-width: 88%; }
     }
@@ -321,11 +335,21 @@
     <section class="stage">
       <div class="scene" id="scene" aria-hidden="true">
         <div class="menubar">
-          <div class="item" id="mbitem">
-            <svg viewBox="0 0 1024 1024" width="18" height="18" aria-hidden="true"><rect x="100" y="100" width="824" height="824" rx="186" fill="#4b4be0"/><path fill="#fff" d="M296 262H728A84 84 0 0 1 812 346V598A84 84 0 0 1 728 682H420L318 778L336 682H296A84 84 0 0 1 212 598V346A84 84 0 0 1 296 262Z"/><rect x="292" y="356" width="440" height="42" rx="21" fill="#C9CBDD"/><rect x="280" y="437" width="372" height="70" rx="20" fill="#FFD84D"/><rect x="292" y="451" width="348" height="42" rx="21" fill="#2B2A5A"/><rect x="292" y="546" width="380" height="42" rx="21" fill="#C9CBDD"/></svg>
-            <span class="badge" id="badge">0</span>
+          <div class="left">
+            <svg class="apple" viewBox="0 0 24 24" aria-hidden="true"><path d="M16.4 12.7c0-2.6 2.1-3.8 2.2-3.9-1.2-1.8-3.1-2-3.7-2-1.6-.2-3.1.9-3.9.9-.8 0-2-.9-3.4-.9-1.7 0-3.3 1-4.2 2.6-1.8 3.1-.5 7.7 1.3 10.2.9 1.2 1.9 2.6 3.2 2.6 1.3-.1 1.8-.8 3.3-.8s2 .8 3.4.8c1.4 0 2.3-1.3 3.1-2.5 1-1.4 1.4-2.8 1.4-2.9-.1 0-2.7-1-2.7-4.1zM13.9 5.1c.7-.9 1.2-2.1 1.1-3.3-1 0-2.3.7-3 1.6-.7.8-1.3 2-1.1 3.2 1.1.1 2.3-.6 3-1.5z"/></svg>
+            <span class="app">Helium</span>
+            <span>File</span><span>Edit</span><span>View</span><span>History</span><span>Bookmarks</span><span>Window</span><span>Help</span>
           </div>
-          <div class="item">Wed 2:14 PM</div>
+          <div class="right">
+            <div class="item" id="mbitem">
+              <svg class="sp" viewBox="0 0 1024 1024" aria-hidden="true"><rect x="100" y="100" width="824" height="824" rx="186" fill="#fff" fill-opacity="0.18"/><path fill="#fff" d="M296 262H728A84 84 0 0 1 812 346V598A84 84 0 0 1 728 682H420L318 778L336 682H296A84 84 0 0 1 212 598V346A84 84 0 0 1 296 262Z"/><rect x="292" y="356" width="440" height="42" rx="21" fill="#2a6fe0" fill-opacity="0.35"/><rect x="280" y="437" width="372" height="70" rx="20" fill="#FFD84D"/><rect x="292" y="451" width="348" height="42" rx="21" fill="#2B2A5A"/><rect x="292" y="546" width="380" height="42" rx="21" fill="#2a6fe0" fill-opacity="0.35"/></svg>
+              <span class="badge" id="badge">0</span>
+            </div>
+            <svg class="glyph" viewBox="0 0 24 18" aria-hidden="true"><path d="M12 15.5a2 2 0 1 1 0 .01zM12 10.6c1.6 0 3.1.6 4.2 1.7l-1.6 1.6a3.7 3.7 0 0 0-5.2 0L7.8 12.3a5.9 5.9 0 0 1 4.2-1.7zm0-4.4c2.9 0 5.5 1.1 7.4 3l-1.6 1.6A8.3 8.3 0 0 0 12 8.4a8.3 8.3 0 0 0-5.8 2.4L4.6 9.2c1.9-1.9 4.5-3 7.4-3zm0-4.4c4.1 0 7.8 1.6 10.5 4.3l-1.6 1.6A12.8 12.8 0 0 0 12 4a12.8 12.8 0 0 0-8.9 3.7L1.5 6.1C4.2 3.4 7.9 1.8 12 1.8z"/></svg>
+            <svg class="glyph" viewBox="0 0 30 14" aria-hidden="true"><rect x="0.5" y="0.5" width="25" height="13" rx="3.5" fill="none" stroke="#fff" stroke-opacity="0.6"/><rect x="2" y="2" width="20" height="10" rx="2" /><path d="M27 4.5v5a2.5 2.5 0 0 0 0-5z" fill-opacity="0.6"/></svg>
+            <svg class="glyph" viewBox="0 0 24 18" aria-hidden="true"><rect x="1" y="1" width="22" height="7" rx="3.5" fill-opacity="0.45"/><circle cx="18.5" cy="4.5" r="2.7"/><rect x="1" y="10" width="22" height="7" rx="3.5" fill-opacity="0.45"/><circle cx="5.5" cy="13.5" r="2.7"/></svg>
+            <span>Wed Sep 2&nbsp; 2:14 PM</span>
+          </div>
         </div>
 
         <div class="win" id="doc">
@@ -335,9 +359,18 @@
               <div class="user">how does a CEK machine handle closures?</div>
               <div class="assistant">
                 <p class="h">Closures in a CEK machine</p>
+                <p>A CEK machine is a small abstract machine for evaluating the lambda calculus. Its state has three parts: the <em>control</em>, which is the expression being evaluated; the <em>environment</em>, a map from variable names to values; and the <em>continuation</em>, which records what to do once the current expression produces a value.</p>
                 <p><span class="sel" id="s1">Because the closure captures the environment at definition time, a CEK machine never substitutes. It extends the environment instead.</span></p>
+                <p>When the machine reaches a lambda expression it does not evaluate the body. It packages the lambda together with the current environment into a closure and treats that pair as the value. The body runs only when the closure is applied, and by then the machine may be somewhere else entirely.</p>
+                <p class="h">Applying a closure</p>
+                <p>Application has two steps. First the machine evaluates the function position and pushes a frame onto the continuation that says "when you have the function, evaluate the argument". Then it evaluates the argument with a second frame that says "when you have the argument, apply".</p>
                 <p><span class="sel" id="s2">The continuation is a separate stack of frames. Each frame records what to do with the value once it arrives.</span></p>
-                <p>Lookups walk the environment chain until they find the binding. In practice the chain stays short, because most closures are created in shallow scopes and are dropped as soon as their frame returns.</p>
+                <p>Once both pieces are ready, the machine takes the closure's saved environment, binds the parameter to the argument value, and continues with the closure body in that extended environment. The caller's environment is not consulted at all, which is exactly what gives you lexical scope.</p>
+                <p class="h">Variable lookup</p>
+                <p><span class="sel" id="s3">Lookups walk the environment chain until they find the binding. In practice the chain stays short, because most closures are created in shallow scopes and are dropped as soon as their frame returns.</span></p>
+                <p>This is why the machine needs no substitution step. Every variable is resolved by lookup at the moment it is used, and the closure guarantees that the lookup happens in the environment the function was written in, not the one it was called from.</p>
+                <p class="h">Why this matters</p>
+                <p>The same structure shows up in real interpreters. A closure in JavaScript or Scheme is the same pair of code plus captured environment, and a stack frame is the same kind of continuation frame. The CEK machine just makes the pieces explicit, which is why it is a useful model when you are trying to reason about scope, tail calls, or first-class continuations.</p>
               </div>
             </div>
           </div>
@@ -376,11 +409,13 @@
     let added = [];
 
     const notes = [
-      { sel: "s1", said: "wait, doesn't the environment grow forever then? when does anything get pruned" },
-      { sel: "s2", said: "so is the continuation the stack, or is the environment the stack? I keep mixing these up" },
-      { sel: null, said: "actually I think I get it. environment is data, continuation is control" },
+      { sel: "s1", time: "2:14 PM", said: "wait, doesn't the environment grow forever then? when does anything get pruned" },
+      { sel: "s2", time: "2:15 PM", said: "so is the continuation the stack, or is the environment the stack? I keep mixing these up" },
+      { sel: "s3", time: "2:16 PM", said: "chain stays short, ok so that's the answer to my first question I think. closures only keep what they were made in" },
+      { sel: null, time: "2:17 PM", said: "actually I think I get it. environment is data, continuation is control" },
     ];
-    const replyWords = "Good instinct on both. The environment doesn't grow forever: a closure only keeps the frames it was created inside, and a frame is dropped as soon as nothing references it. And your last note is exactly right, which is why the two feel like the same thing. The environment answers \"what does x mean here\", the continuation answers \"what happens next\".".split(" ");
+    const PREAMBLE = "These are my reading notes, captured in order while I read. Each entry is either a response to a quoted passage or a standalone thought. Read the notes as a whole and give me one coherent response that takes all of them into account.";
+    const replyWords = "Good instincts, and your third note already answers your first. The environment doesn't grow forever because a closure keeps only the frames it was created inside, and a frame is dropped once nothing references it. On the second note, your last thought is the right way to hold it. The environment is data: it answers \"what does x mean here\". The continuation is control: it answers \"what happens next\". Both are chains, but only the continuation is the call stack.".split(" ");
 
     /* ---------- waveform (same shapes as the app: live bars, travelling wave) ---------- */
     const wctx = wave.getContext("2d");
@@ -485,9 +520,57 @@
       card.remove();
     };
 
+    let hls = [];
+    const highlight = async (sel) => {
+      const range = document.createRange();
+      range.selectNodeContents(sel);
+      const cr = col.getBoundingClientRect();
+      const lines = [];
+      for (const r of range.getClientRects()) {
+        if (r.width < 1) continue;
+        const last = lines[lines.length - 1];
+        if (last && Math.abs(last.top - r.top) < 3) {
+          last.left = Math.min(last.left, r.left); last.right = Math.max(last.right, r.right);
+          last.bottom = Math.max(last.bottom, r.bottom);
+        } else {
+          lines.push({ top: r.top, left: r.left, right: r.right, bottom: r.bottom });
+        }
+      }
+      for (const l of lines) {
+        const d = document.createElement("div");
+        d.className = "hl";
+        d.style.left = (l.left - cr.left - 1) + "px";
+        d.style.top = (l.top - cr.top) + "px";
+        d.style.height = (l.bottom - l.top) + "px";
+        d.style.width = "0px";
+        col.appendChild(d); hls.push(d);
+        const w = l.right - l.left + 2;
+        const dur = Math.max(120, Math.min(480, w * 0.5));
+        d.style.transition = `width ${dur}ms linear`;
+        void d.offsetWidth;
+        d.style.width = w + "px";
+        await sleep(dur + 30);
+      }
+    };
+    const unhighlight = async (instant) => {
+      const cur = hls; hls = [];
+      if (instant) { for (const d of cur) d.remove(); return; }
+      for (const d of cur) { d.style.transition = "opacity 110ms ease"; d.style.opacity = "0"; }
+      await sleep(130);
+      for (const d of cur) d.remove();
+    };
+
+    const scrollToSel = async (sel) => {
+      const target = Math.max(0, sel.offsetTop - msgs.clientHeight * 0.32);
+      if (Math.abs(target - msgs.scrollTop) > 24) {
+        msgs.scrollTo({ top: target, behavior: "smooth" });
+        await sleep(900);
+      }
+    };
+
     const capture = async (note, count) => {
       const sel = note.sel ? $(note.sel) : null;
-      if (sel) { sel.classList.add("on"); await sleep(750); }
+      if (sel) { await scrollToSel(sel); await highlight(sel); await sleep(500); }
 
       capsuleState("live", "Listening", "Release to save");
       capsule.classList.add("on");
@@ -505,21 +588,27 @@
       const fly = flyCard(sel ? sel.textContent : null, note.said);
       await sleep(380);
       setBadge(count);
-      if (sel) sel.classList.remove("on");
+      if (sel) unhighlight(false);
       await fly;
       await sleep(500);
     };
 
-    const promptHTML = () => {
+    const esc = (t) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+    const promptHTML = (rich) => {
+      const b = (t) => rich ? `<b>${t}</b>` : t;
       const entries = notes.map((n, i) => {
-        const q = n.sel ? `\n> ${$(n.sel).textContent}\n` : "\n";
-        return `<b>## ${i + 1}</b>${q}\n${n.said}`;
+        const parts = [b(`## ${i + 1}`)];
+        if (n.sel) parts.push(`<span class="q">&gt; ${esc($(n.sel).textContent)}</span>`);
+        parts.push(esc(n.said));
+        const where = n.sel ? "Helium · CEK machines · chatgpt.com/c/8f21… · " : "Helium · ";
+        parts.push(`<span class="meta">_${where}${n.time}_</span>`);
+        return parts.join("\n\n");
       }).join("\n\n");
-      return `These are my reading notes, captured in order while I read. Give me one coherent response that takes all of them into account.\n\n${entries}`;
+      return `${PREAMBLE}\n\n${b("# Reading notes — September 2, 2026")}\n\n${entries}`;
     };
 
     const reset = () => {
-      for (const id of ["s1", "s2"]) $(id).classList.remove("on");
+      unhighlight(true);
       capsule.classList.remove("on"); capsuleState("idle", "Listening", "Release to save");
       subs.classList.remove("on"); subline.innerHTML = "";
       ctext.innerHTML = PH; composer.classList.remove("flash");
@@ -532,21 +621,22 @@
     const scrollDown = () => msgs.scrollTo({ top: msgs.scrollHeight, behavior: "smooth" });
 
     const sendAndReply = async () => {
-      ctext.innerHTML = promptHTML();
+      msgs.scrollTo({ top: msgs.scrollHeight, behavior: "smooth" });
+      await sleep(600);
+      ctext.innerHTML = promptHTML(true);
       composer.classList.add("flash");
-      await sleep(1600);
+      await sleep(1700);
 
       composer.classList.remove("flash");
       ctext.innerHTML = PH;
       const u = document.createElement("div");
       u.className = "user pending";
-      u.innerHTML = `These are my reading notes, captured in order while I read…\n\n` +
-        notes.map((n, i) => `<span class="dim">${i + 1} · </span>${n.said}`).join("\n");
+      u.innerHTML = promptHTML(false);
       col.appendChild(u); added.push(u);
       void u.offsetWidth; u.classList.add("on");
       setBadge(0);
-      scrollDown();
-      await sleep(700);
+      msgs.scrollTo({ top: u.offsetTop - 12, behavior: "smooth" });
+      await sleep(1800);
 
       const a = document.createElement("div");
       a.className = "assistant";
@@ -561,16 +651,16 @@
         a.appendChild(span);
         void span.offsetWidth; span.classList.add("on");
         if (a.children.length % 6 === 0) scrollDown();
-        await sleep(38 + Math.random() * 40);
+        await sleep(36 + Math.random() * 36);
       }
       scrollDown();
-      await sleep(3200);
+      await sleep(3400);
     };
 
     const run = async () => {
       if (reduced) {
         setBadge(notes.length);
-        ctext.innerHTML = promptHTML();
+        ctext.innerHTML = promptHTML(true);
         return;
       }
       for (;;) {

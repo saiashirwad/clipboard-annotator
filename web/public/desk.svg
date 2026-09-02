@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2000 1240" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7fb0e4"/>
+      <stop offset="0.22" stop-color="#b9d3ee"/>
+      <stop offset="0.38" stop-color="#f1e6c4"/>
+      <stop offset="0.5" stop-color="#f6ecc9"/>
+    </linearGradient>
+    <linearGradient id="band" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#2d6fe0"/>
+      <stop offset="0.35" stop-color="#7fd6f4"/>
+      <stop offset="0.7" stop-color="#3fb3f0"/>
+      <stop offset="1" stop-color="#2a8de6"/>
+    </linearGradient>
+    <linearGradient id="deep" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2f78ea"/>
+      <stop offset="0.55" stop-color="#1a4fd6"/>
+      <stop offset="1" stop-color="#0b2f9e"/>
+    </linearGradient>
+    <radialGradient id="lobeL" cx="0.35" cy="0.9" r="0.7">
+      <stop offset="0" stop-color="#c4ecf2"/>
+      <stop offset="0.5" stop-color="#8fd7ea"/>
+      <stop offset="1" stop-color="#8fd7ea" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="lobeR" cx="0.85" cy="0.85" r="0.6">
+      <stop offset="0" stop-color="#cdeef0"/>
+      <stop offset="0.5" stop-color="#9fdde8"/>
+      <stop offset="1" stop-color="#9fdde8" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="28"/></filter>
+    <filter id="softer" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="60"/></filter>
+    <filter id="hair" x="-5%" y="-5%" width="110%" height="110%"><feGaussianBlur stdDeviation="1.2"/></filter>
+  </defs>
+
+  <rect width="2000" height="1240" fill="url(#sky)"/>
+
+  <!-- distant purple-blue peak -->
+  <path d="M520 560 C 700 470, 820 380, 900 385 C 980 390, 1080 470, 1260 540 Z" fill="#5d5fc9" opacity="0.85" filter="url(#softer)"/>
+
+  <!-- upper cyan band -->
+  <path d="M0 445 C 300 470, 620 520, 900 420 C 1150 520, 1500 470, 2000 400 L 2000 720 C 1700 720, 1400 760, 1250 745 C 900 740, 500 470, 0 440 Z" fill="url(#band)" filter="url(#soft)"/>
+
+  <!-- deep blue body -->
+  <path d="M0 440 C 500 460, 800 740, 1250 745 C 1550 750, 1800 640, 2000 510 L 2000 1240 L 0 1240 Z" fill="url(#deep)"/>
+
+  <!-- pale lobes -->
+  <ellipse cx="380" cy="1080" rx="720" ry="420" fill="url(#lobeL)" filter="url(#soft)"/>
+  <ellipse cx="1750" cy="1010" rx="560" ry="400" fill="url(#lobeR)" filter="url(#soft)"/>
+  <ellipse cx="150" cy="620" rx="260" ry="120" fill="#a9e6f3" opacity="0.7" filter="url(#softer)"/>
+
+  <!-- crest line -->
+  <path d="M0 440 C 500 460, 800 740, 1250 745 C 1550 750, 1800 640, 2000 510" fill="none" stroke="#eaf5ff" stroke-width="4" filter="url(#hair)"/>
+</svg>
