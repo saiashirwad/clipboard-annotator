@@ -23,7 +23,25 @@ enum LocalVoiceModelState: Equatable, Sendable {
     case notDownloaded
     case downloading
     case ready
-    case failed
+    case failed(VoiceModelDownloadFailure)
+}
+
+enum VoiceModelDownloadFailure: Equatable, Sendable {
+    /// The Mac had no usable network path to the model host.
+    case offline
+    case other
+
+    init(_ error: Error) {
+        let offlineCodes: Set<URLError.Code> = [
+            .notConnectedToInternet, .networkConnectionLost, .cannotFindHost,
+            .cannotConnectToHost, .dnsLookupFailed, .timedOut, .internationalRoamingOff,
+        ]
+        if let urlError = error as? URLError, offlineCodes.contains(urlError.code) {
+            self = .offline
+        } else {
+            self = .other
+        }
+    }
 }
 
 enum PermissionAction: Equatable, Sendable {
@@ -247,7 +265,7 @@ final class PermissionState {
     func downloadModel() {
         guard lifecycle == .active,
               modelDownloadTask == nil,
-              localVoiceModel == .notDownloaded || localVoiceModel == .failed
+              localVoiceModelAction == .downloadVoiceModel
         else { return }
         modelGeneration += 1
         let generation = modelGeneration
@@ -259,12 +277,15 @@ final class PermissionState {
                 try Task.checkCancellation()
                 try await services.downloadVoiceModel()
                 try Task.checkCancellation()
-                self?.finishModelDownload(generation: generation, succeeded: true)
+                self?.finishModelDownload(generation: generation, result: .ready)
             } catch is CancellationError {
                 return
             } catch {
                 guard !Task.isCancelled else { return }
-                self?.finishModelDownload(generation: generation, succeeded: false)
+                self?.finishModelDownload(
+                    generation: generation,
+                    result: .failed(VoiceModelDownloadFailure(error))
+                )
             }
         }
     }
@@ -362,11 +383,11 @@ final class PermissionState {
         microphone = granted ? .granted : .denied
     }
 
-    private func finishModelDownload(generation: Int, succeeded: Bool) {
+    private func finishModelDownload(generation: Int, result: LocalVoiceModelState) {
         guard lifecycle == .active, modelGeneration == generation else { return }
         modelGeneration += 1
         modelDownloadTask = nil
-        localVoiceModel = succeeded ? .ready : .failed
+        localVoiceModel = result
     }
 }
 

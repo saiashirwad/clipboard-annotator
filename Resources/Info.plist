@@ -31,6 +31,8 @@
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>NSAppleEventsUsageDescription</key>
-    <string>Clipboard Annotator reads extra provenance from supported apps, such as an active tab URL, when available.</string>
+    <string>Clipboard Annotator asks your browser for the active tab’s title and URL so a note records where it came from.</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.productivity</string>
 </dict>
 </plist>

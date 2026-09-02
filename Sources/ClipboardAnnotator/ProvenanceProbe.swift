@@ -71,6 +71,20 @@ struct ProvenanceProbe: Sendable {
         "dev.zed.Zed", "dev.zed.Zed-Preview",
     ]
 
+    /// Browsers that answer the Chromium AppleScript dictionary. Asking one for
+    /// its active tab triggers the macOS Automation prompt for that browser once.
+    static let chromiumBrowserBundleIDs: Set<String> = [
+        "net.imput.helium",
+        "com.google.Chrome", "com.google.Chrome.beta", "com.google.Chrome.dev",
+        "com.google.Chrome.canary", "org.chromium.Chromium",
+        "company.thebrowser.Browser", "com.brave.Browser",
+        "com.microsoft.edgemac", "com.vivaldi.Vivaldi",
+    ]
+
+    static let safariBundleIDs: Set<String> = [
+        "com.apple.Safari", "com.apple.SafariTechnologyPreview",
+    ]
+
     static func live() -> Self {
         var enrichers: [String: Lookup] = [
             "com.mitchellh.ghostty": { application in
@@ -78,16 +92,19 @@ struct ProvenanceProbe: Sendable {
                     processIdentifier: application.processIdentifier
                 )
             },
-            "net.imput.helium": { application in
-                let matches = await ProvenanceSystemBoundary.isRunningApplication(
-                    processIdentifier: application.processIdentifier,
-                    bundleID: "net.imput.helium"
-                )
-                try Task.checkCancellation()
-                guard matches else { return ProvenanceFields() }
-                return try await ProvenanceSystemBoundary.heliumActiveTabFields()
-            },
         ]
+        for bundleID in chromiumBrowserBundleIDs {
+            enrichers[bundleID] = browserEnricher(
+                bundleID: bundleID,
+                script: BrowserActiveTabScript.chromium(bundleID: bundleID)
+            )
+        }
+        for bundleID in safariBundleIDs {
+            enrichers[bundleID] = browserEnricher(
+                bundleID: bundleID,
+                script: BrowserActiveTabScript.safari(bundleID: bundleID)
+            )
+        }
         for bundleID in codeEditorBundleIDs {
             enrichers[bundleID] = { application in
                 try await ProvenanceSystemBoundary.codeEditorFields(
@@ -108,6 +125,18 @@ struct ProvenanceProbe: Sendable {
         )
     }
 
+    private static func browserEnricher(bundleID: String, script: String) -> Lookup {
+        { application in
+            let matches = await ProvenanceSystemBoundary.isRunningApplication(
+                processIdentifier: application.processIdentifier,
+                bundleID: bundleID
+            )
+            try Task.checkCancellation()
+            guard matches else { return ProvenanceFields() }
+            return try await ProvenanceSystemBoundary.activeTabFields(script: script)
+        }
+    }
+
     private func provenance(
         _ identity: ApplicationIdentity,
         _ fields: ProvenanceFields
@@ -121,7 +150,35 @@ struct ProvenanceProbe: Sendable {
     }
 }
 
-enum HeliumActiveTabParser {
+/// AppleScript that returns "title\nURL" for the front window's active tab.
+/// Each script targets a bundle ID, so it never launches a browser by name.
+enum BrowserActiveTabScript {
+    static func chromium(bundleID: String) -> String {
+        """
+        with timeout of 2 seconds
+            tell application id "\(bundleID)"
+                if not (exists front window) then return ""
+                set selectedTab to active tab of front window
+                return (title of selectedTab as text) & linefeed & (URL of selectedTab as text)
+            end tell
+        end timeout
+        """
+    }
+
+    static func safari(bundleID: String) -> String {
+        """
+        with timeout of 2 seconds
+            tell application id "\(bundleID)"
+                if not (exists front window) then return ""
+                set selectedTab to current tab of front window
+                return (name of selectedTab as text) & linefeed & (URL of selectedTab as text)
+            end tell
+        end timeout
+        """
+    }
+}
+
+enum BrowserActiveTabParser {
     static func fields(from result: String) -> ProvenanceFields {
         let parts = result.split(
             separator: "\n",
@@ -222,17 +279,9 @@ private enum ProvenanceSystemBoundary {
         return !application.isTerminated && application.bundleIdentifier == bundleID
     }
 
-    static func heliumActiveTabFields() throws -> ProvenanceFields {
+    static func activeTabFields(script source: String) throws -> ProvenanceFields {
         try Task.checkCancellation()
-        guard let script = NSAppleScript(source: """
-        with timeout of 2 seconds
-            tell application id "net.imput.helium"
-                if not (exists front window) then return ""
-                set selectedTab to active tab of front window
-                return (title of selectedTab as text) & linefeed & (URL of selectedTab as text)
-            end tell
-        end timeout
-        """) else { return ProvenanceFields() }
+        guard let script = NSAppleScript(source: source) else { return ProvenanceFields() }
         var error: NSDictionary?
         try Task.checkCancellation()
         let descriptor = script.executeAndReturnError(&error)
@@ -240,7 +289,7 @@ private enum ProvenanceSystemBoundary {
         guard error == nil, let result = descriptor.stringValue else {
             return ProvenanceFields()
         }
-        return HeliumActiveTabParser.fields(from: result)
+        return BrowserActiveTabParser.fields(from: result)
     }
 
     private static func focusedWindow(processIdentifier: pid_t) throws -> AXUIElement? {

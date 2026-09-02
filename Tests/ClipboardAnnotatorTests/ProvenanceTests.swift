@@ -176,7 +176,7 @@ final class ProvenanceProbeTests: XCTestCase {
         )
     }
 
-    func testHeliumResultParsingThroughInjectedEnricherAcceptsOnlyWebURL() async {
+    func testBrowserTabParsingThroughInjectedEnricherAcceptsOnlyWebURL() async {
         let helium = CapturedApplication(
             identity: ApplicationIdentity(name: "Helium", bundleID: "net.imput.helium"),
             processIdentifier: 7
@@ -185,7 +185,7 @@ final class ProvenanceProbeTests: XCTestCase {
             genericLookup: { _ in ProvenanceFields(windowTitle: "Helium") },
             enrichers: [
                 "net.imput.helium": { _ in
-                    HeliumActiveTabParser.fields(
+                    BrowserActiveTabParser.fields(
                         from: "Article title\nhttps://example.com/story?item=1"
                     )
                 },
@@ -207,7 +207,7 @@ final class ProvenanceProbeTests: XCTestCase {
             "relative/path",
             "https://user:password@example.com/private",
         ] {
-            let fields = HeliumActiveTabParser.fields(from: "Title\n\(unsafe)")
+            let fields = BrowserActiveTabParser.fields(from: "Title\n\(unsafe)")
             XCTAssertEqual(fields.windowTitle, "Title")
             XCTAssertNil(fields.url, unsafe)
         }

@@ -394,7 +394,7 @@ struct SettingsView: View {
                 }
             }
             Label {
-                Text("Accessibility is required for capture. Voice annotations are optional, and everything stays on this Mac.")
+                Text("Accessibility is required for capture. Voice annotations are optional. The voice model is a one-time 460 MB download from Hugging Face, and audio and transcription never leave this Mac.")
             } icon: {
                 Image(systemName: "lock.shield")
             }

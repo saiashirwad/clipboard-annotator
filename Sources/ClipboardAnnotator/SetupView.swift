@@ -126,7 +126,7 @@ struct PermissionCapabilityList: View {
         CapabilityRow(
             icon: "waveform",
             title: "Local voice model",
-            reason: "Transcribes voice annotations on this Mac. Optional.",
+            reason: "Transcribes voice annotations on this Mac. Optional. A one-time 460 MB download.",
             status: voiceModelStatus,
             actionTitle: voiceModelActionTitle,
             showsProgress: permissionState.localVoiceModel == .checking
@@ -159,7 +159,8 @@ struct PermissionCapabilityList: View {
         case .notDownloaded: .neutral("Not downloaded")
         case .downloading: .neutral("Downloading…")
         case .ready: .ready("Downloaded")
-        case .failed: .attention("Download failed")
+        case .failed(.offline): .attention("No internet connection")
+        case .failed(.other): .attention("Download failed")
         }
     }
 
@@ -181,7 +182,8 @@ struct PermissionCapabilityList: View {
 
     private var voiceModelActionTitle: String? {
         guard permissionState.localVoiceModelAction == .downloadVoiceModel else { return nil }
-        return permissionState.localVoiceModel == .failed ? "Retry Download…" : "Download Model…"
+        if case .failed = permissionState.localVoiceModel { return "Retry Download…" }
+        return "Download Model…"
     }
 
     private func performAccessibilityAction() {

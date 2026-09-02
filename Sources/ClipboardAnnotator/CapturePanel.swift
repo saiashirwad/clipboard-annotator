@@ -494,7 +494,10 @@ final class CaptureController {
                 else { return }
                 self.voiceTranscriptionTask = nil
                 Diag.log("voice transcription failed: \(error.localizedDescription)")
-                self.showVoiceFailure("Couldn’t transcribe that audio.", for: model)
+                let message = VoiceModelDownloadFailure(error) == .offline
+                    ? "No internet connection to download the voice model."
+                    : "Couldn’t transcribe that audio."
+                self.showVoiceFailure(message, for: model)
             }
         }
     }

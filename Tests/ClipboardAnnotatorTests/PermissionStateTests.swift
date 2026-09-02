@@ -194,7 +194,7 @@ final class PermissionStateTests: XCTestCase {
         state.downloadModel()
         XCTAssertEqual(state.localVoiceModel, .downloading)
         await state.waitForIdle()
-        XCTAssertEqual(state.localVoiceModel, .failed)
+        XCTAssertEqual(state.localVoiceModel, .failed(.other))
 
         state.downloadModel()
         await state.waitForIdle()
