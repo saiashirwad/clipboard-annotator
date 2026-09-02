@@ -43,6 +43,7 @@ final class AppSettings {
         static let clearCombo = "clearCombo"
         static let pasteDirectly = "pasteDirectly"
         static let restoreFocusAfterSave = "restoreFocusAfterSave"
+        static let hasCompletedSetup = "hasCompletedSetup"
     }
 
     private let defaults: UserDefaults
@@ -63,6 +64,7 @@ final class AppSettings {
 
     var pasteDirectly: Bool { didSet { defaults.set(pasteDirectly, forKey: Key.pasteDirectly); onHotKeysChanged?() } }
     var restoreFocusAfterSave: Bool { didSet { defaults.set(restoreFocusAfterSave, forKey: Key.restoreFocusAfterSave) } }
+    private(set) var hasCompletedSetup: Bool
 
     var launchAtLogin: Bool {
         didSet {
@@ -111,6 +113,7 @@ final class AppSettings {
 
         pasteDirectly = defaults.object(forKey: Key.pasteDirectly) as? Bool ?? true
         restoreFocusAfterSave = defaults.object(forKey: Key.restoreFocusAfterSave) as? Bool ?? true
+        hasCompletedSetup = defaults.object(forKey: Key.hasCompletedSetup) as? Bool ?? false
         launchAtLogin = SMAppService.mainApp.status == .enabled
 
         for obsoleteKey in ["includeSource", "includeHeading", "clearAfterCopy"] {
@@ -118,6 +121,12 @@ final class AppSettings {
         }
         persistProfiles()
         persistActiveProfileID()
+    }
+
+    func completeSetup() {
+        guard !hasCompletedSetup else { return }
+        hasCompletedSetup = true
+        defaults.set(true, forKey: Key.hasCompletedSetup)
     }
 
     func selectProfile(id: UUID) throws {

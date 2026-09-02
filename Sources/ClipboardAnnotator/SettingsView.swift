@@ -5,21 +5,25 @@ import SwiftUI
 struct SettingsView: View {
     @Bindable var settings: AppSettings
     @Bindable var profileEditor: ProfileEditorState
+    @Bindable var permissionState: PermissionState
     let onSelectProfile: (UUID) -> Void
-
-    @State private var trusted = PermissionCheck.isTrusted
-    @State private var microphoneAuthorized = PermissionCheck.isMicrophoneAuthorized
-    @State private var voiceModelState: VoiceModelState = .checking
-    @State private var voiceModelDownloadID: UUID?
+    let onShowAccessibilityHelper: () -> Void
+    let onRunSetup: () -> Void
 
     init(
         settings: AppSettings,
         profileEditor: ProfileEditorState,
-        onSelectProfile: @escaping (UUID) -> Void
+        permissionState: PermissionState,
+        onSelectProfile: @escaping (UUID) -> Void,
+        onShowAccessibilityHelper: @escaping () -> Void,
+        onRunSetup: @escaping () -> Void
     ) {
         _settings = Bindable(wrappedValue: settings)
         _profileEditor = Bindable(wrappedValue: profileEditor)
+        _permissionState = Bindable(wrappedValue: permissionState)
         self.onSelectProfile = onSelectProfile
+        self.onShowAccessibilityHelper = onShowAccessibilityHelper
+        self.onRunSetup = onRunSetup
     }
 
     var body: some View {
@@ -45,39 +49,15 @@ struct SettingsView: View {
             }
 
             Section {
-                LabeledContent("Accessibility") {
-                    HStack(spacing: 10) {
-                        HStack(spacing: 6) {
-                            Circle()
-                                .fill(trusted ? Color.green : Color.orange)
-                                .frame(width: 8, height: 8)
-                            Text(trusted ? "Granted" : "Not granted")
-                                .foregroundStyle(trusted ? .primary : .secondary)
-                        }
-                        Button("Open System Settings…") { PermissionCheck.openAccessibilitySettings() }
-                            .controlSize(.small)
-                    }
-                }
-                LabeledContent("Microphone") {
-                    HStack(spacing: 10) {
-                        HStack(spacing: 6) {
-                            Circle()
-                                .fill(microphoneAuthorized ? Color.green : Color.orange)
-                                .frame(width: 8, height: 8)
-                            Text(microphoneAuthorized ? "Granted" : "Not granted")
-                                .foregroundStyle(microphoneAuthorized ? .primary : .secondary)
-                        }
-                        Button("Open System Settings…") { PermissionCheck.openMicrophoneSettings() }
-                            .controlSize(.small)
-                    }
-                }
-                LabeledContent("Local voice model") {
-                    voiceModelControl
-                }
+                PermissionCapabilityList(
+                    permissionState: permissionState,
+                    onShowAccessibilityHelper: onShowAccessibilityHelper
+                )
+                Button("Run Setup Again…", action: onRunSetup)
             } header: {
                 Text("Permissions and voice model")
             } footer: {
-                Text("Accessibility reads selected text. The microphone is only used while you hold the voice shortcut. The voice model stays on this Mac.")
+                Text("Accessibility is required for capture. Voice and Helium provenance are optional.")
             }
 
             Section("App") {
@@ -85,21 +65,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 560, height: 760)
-        .task {
-            await refreshVoiceModelState()
-            for await _ in NotificationCenter.default.notifications(
-                named: NSApplication.didBecomeActiveNotification
-            ) {
-                guard !Task.isCancelled else { return }
-                trusted = PermissionCheck.isTrusted
-                microphoneAuthorized = PermissionCheck.isMicrophoneAuthorized
-            }
-        }
-        .task(id: voiceModelDownloadID) {
-            guard let voiceModelDownloadID else { return }
-            await downloadVoiceModel(id: voiceModelDownloadID)
-        }
+        .frame(width: 620, height: 880)
     }
 
     private var profileSection: some View {
@@ -189,55 +155,6 @@ struct SettingsView: View {
         ProfileDialogs.delete(profileEditor)
     }
 
-    @ViewBuilder
-    private var voiceModelControl: some View {
-        switch voiceModelState {
-        case .checking:
-            ProgressView()
-                .controlSize(.small)
-        case .notDownloaded:
-            Button("Download…") { downloadVoiceModel() }
-                .controlSize(.small)
-        case .downloading:
-            HStack(spacing: 6) {
-                ProgressView()
-                    .controlSize(.small)
-                Text("Downloading…")
-                    .foregroundStyle(.secondary)
-            }
-        case .ready:
-            Label("Downloaded", systemImage: "checkmark.circle.fill")
-                .foregroundStyle(.green)
-        case .failed:
-            Button("Retry download…") { downloadVoiceModel() }
-                .controlSize(.small)
-        }
-    }
-
-    private func refreshVoiceModelState() async {
-        voiceModelState = await VoiceAnnotationService.shared.isVoiceModelReady() ? .ready : .notDownloaded
-    }
-
-    private func downloadVoiceModel() {
-        voiceModelState = .downloading
-        voiceModelDownloadID = UUID()
-    }
-
-    private func downloadVoiceModel(id: UUID) async {
-        do {
-            try await VoiceAnnotationService.shared.downloadVoiceModel()
-            try Task.checkCancellation()
-            guard voiceModelDownloadID == id else { return }
-            voiceModelState = .ready
-            voiceModelDownloadID = nil
-        } catch is CancellationError {
-            return
-        } catch {
-            guard !Task.isCancelled, voiceModelDownloadID == id else { return }
-            voiceModelState = .failed
-            voiceModelDownloadID = nil
-        }
-    }
 }
 
 @MainActor

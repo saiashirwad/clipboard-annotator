@@ -108,6 +108,22 @@ final class ProfileSettingsTests: XCTestCase {
         XCTAssertEqual(reloaded.activeProfile, custom)
     }
 
+    func testSetupCompletionDefaultsFalseAndPersistsOnlyAfterExplicitCompletion() {
+        let defaults = makeDefaults()
+        defer { remove(defaults) }
+
+        let initial = AppSettings(defaults: defaults)
+        XCTAssertFalse(initial.hasCompletedSetup)
+        XCTAssertNil(defaults.object(forKey: "hasCompletedSetup"))
+
+        initial.completeSetup()
+        initial.completeSetup()
+
+        XCTAssertTrue(initial.hasCompletedSetup)
+        XCTAssertEqual(defaults.object(forKey: "hasCompletedSetup") as? Bool, true)
+        XCTAssertTrue(AppSettings(defaults: defaults).hasCompletedSetup)
+    }
+
     func testInitializationRemovesObsoleteGlobalFormattingKeys() {
         let defaults = makeDefaults()
         defer { remove(defaults) }

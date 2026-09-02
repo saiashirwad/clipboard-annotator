@@ -35,6 +35,16 @@ enum HeliumAutomationPermissionState: Equatable, Sendable {
     case granted
 }
 
+enum PermissionAction: Equatable, Sendable {
+    case requestAccessibility
+    case showAccessibilityHelper
+    case requestMicrophone
+    case openMicrophoneSettings
+    case downloadVoiceModel
+    case requestHeliumAutomation
+    case openHeliumAutomationSettings
+}
+
 /// A small closure boundary around macOS permission and model APIs.
 /// Tests replace it with deterministic closures and never touch TCC.
 struct PermissionServices: Sendable {
@@ -112,6 +122,48 @@ final class PermissionState {
     private(set) var localVoiceModel: LocalVoiceModelState = .checking
     private(set) var heliumAutomation: HeliumAutomationPermissionState = .checking
     private(set) var heliumInstalled = false
+    private(set) var hasRequestedAccessibility = false
+
+    var accessibilityAction: PermissionAction? {
+        switch accessibility {
+        case .checking, .granted:
+            return nil
+        case .notGranted:
+            return hasRequestedAccessibility ? .showAccessibilityHelper : .requestAccessibility
+        }
+    }
+
+    var microphoneAction: PermissionAction? {
+        switch microphone {
+        case .checking, .granted:
+            return nil
+        case .notDetermined:
+            return .requestMicrophone
+        case .denied, .restricted:
+            return .openMicrophoneSettings
+        }
+    }
+
+    var localVoiceModelAction: PermissionAction? {
+        switch localVoiceModel {
+        case .checking, .downloading, .ready:
+            return nil
+        case .notDownloaded, .failed:
+            return .downloadVoiceModel
+        }
+    }
+
+    var heliumAutomationAction: PermissionAction? {
+        guard heliumInstalled else { return nil }
+        switch heliumAutomation {
+        case .checking, .notInstalled, .granted:
+            return nil
+        case .notDetermined:
+            return .requestHeliumAutomation
+        case .denied:
+            return .openHeliumAutomationSettings
+        }
+    }
 
     var isTextCaptureReady: Bool {
         accessibility == .granted
@@ -122,6 +174,7 @@ final class PermissionState {
     }
 
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
+    @ObservationIgnored private var accessibilityRefreshTask: Task<Void, Never>?
     @ObservationIgnored private var accessibilityRequestTask: Task<Void, Never>?
     @ObservationIgnored private var microphoneRequestTask: Task<Void, Never>?
     @ObservationIgnored private var modelDownloadTask: Task<Void, Never>?
@@ -148,6 +201,8 @@ final class PermissionState {
         refreshGeneration += 1
         let refreshID = refreshGeneration
         let accessibilityID = accessibilityGeneration
+        let appliesAccessibility = accessibilityRefreshTask == nil
+            && accessibilityRequestTask == nil
         let microphoneID = microphoneGeneration
         let modelID = modelGeneration
         let heliumID = heliumGeneration
@@ -174,6 +229,7 @@ final class PermissionState {
             self?.finishRefresh(
                 refreshID: refreshID,
                 accessibilityID: accessibilityID,
+                appliesAccessibility: appliesAccessibility,
                 microphoneID: microphoneID,
                 modelID: modelID,
                 heliumID: heliumID,
@@ -186,9 +242,34 @@ final class PermissionState {
         }
     }
 
+    /// Refresh only Accessibility for helper polling. A running scoped check
+    /// owns its task until completion, so polling ticks never restart it.
+    func refreshAccessibility() {
+        guard lifecycle == .active,
+              accessibilityRefreshTask == nil,
+              accessibilityRequestTask == nil
+        else { return }
+
+        accessibilityGeneration += 1
+        let generation = accessibilityGeneration
+        let services = services
+        accessibilityRefreshTask = Task { [weak self, services] in
+            guard !Task.isCancelled else { return }
+            let status = await services.accessibilityStatus()
+            guard !Task.isCancelled else { return }
+            self?.finishAccessibilityRefresh(generation: generation, status: status)
+        }
+    }
+
     func requestAccessibility() {
-        guard lifecycle == .active else { return }
+        guard lifecycle == .active,
+              accessibility == .notGranted,
+              !hasRequestedAccessibility
+        else { return }
+        accessibilityRefreshTask?.cancel()
+        accessibilityRefreshTask = nil
         accessibilityRequestTask?.cancel()
+        hasRequestedAccessibility = true
         accessibilityGeneration += 1
         let generation = accessibilityGeneration
         let services = services
@@ -203,7 +284,7 @@ final class PermissionState {
     }
 
     func requestMicrophone() {
-        guard lifecycle == .active else { return }
+        guard lifecycle == .active, microphone == .notDetermined else { return }
         microphoneRequestTask?.cancel()
         microphoneGeneration += 1
         let generation = microphoneGeneration
@@ -219,7 +300,10 @@ final class PermissionState {
     }
 
     func downloadModel() {
-        guard lifecycle == .active, modelDownloadTask == nil else { return }
+        guard lifecycle == .active,
+              modelDownloadTask == nil,
+              localVoiceModel == .notDownloaded || localVoiceModel == .failed
+        else { return }
         modelGeneration += 1
         let generation = modelGeneration
         let services = services
@@ -241,7 +325,10 @@ final class PermissionState {
     }
 
     func requestHeliumAutomation() {
-        guard lifecycle == .active, heliumInstalled else { return }
+        guard lifecycle == .active,
+              heliumInstalled,
+              heliumAutomation == .notDetermined
+        else { return }
         heliumRequestTask?.cancel()
         heliumGeneration += 1
         let generation = heliumGeneration
@@ -276,6 +363,7 @@ final class PermissionState {
         while lifecycle == .active {
             let tasks = [
                 refreshTask,
+                accessibilityRefreshTask,
                 accessibilityRequestTask,
                 microphoneRequestTask,
                 modelDownloadTask,
@@ -297,11 +385,13 @@ final class PermissionState {
         heliumGeneration += 1
 
         refreshTask?.cancel()
+        accessibilityRefreshTask?.cancel()
         accessibilityRequestTask?.cancel()
         microphoneRequestTask?.cancel()
         modelDownloadTask?.cancel()
         heliumRequestTask?.cancel()
         refreshTask = nil
+        accessibilityRefreshTask = nil
         accessibilityRequestTask = nil
         microphoneRequestTask = nil
         modelDownloadTask = nil
@@ -311,6 +401,7 @@ final class PermissionState {
     private func finishRefresh(
         refreshID: Int,
         accessibilityID: Int,
+        appliesAccessibility: Bool,
         microphoneID: Int,
         modelID: Int,
         heliumID: Int,
@@ -322,7 +413,7 @@ final class PermissionState {
     ) {
         guard lifecycle == .active, refreshGeneration == refreshID else { return }
         refreshTask = nil
-        if accessibilityGeneration == accessibilityID {
+        if appliesAccessibility, accessibilityGeneration == accessibilityID {
             self.accessibility = accessibility
         }
         if microphoneGeneration == microphoneID {
@@ -335,6 +426,16 @@ final class PermissionState {
             self.heliumInstalled = heliumInstalled
             heliumAutomation = heliumInstalled ? helium : .notInstalled
         }
+    }
+
+    private func finishAccessibilityRefresh(
+        generation: Int,
+        status: AccessibilityPermissionState
+    ) {
+        guard lifecycle == .active, accessibilityGeneration == generation else { return }
+        accessibilityGeneration += 1
+        accessibilityRefreshTask = nil
+        accessibility = status
     }
 
     private func finishAccessibilityRequest(generation: Int, granted: Bool) {

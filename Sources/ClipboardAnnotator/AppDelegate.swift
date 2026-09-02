@@ -7,6 +7,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var stackWindow: NSWindow?
     private var settingsWindow: NSWindow?
+    private var setupWindowController: SetupWindowController?
+    private var accessibilityHelperWindowController: AccessibilityHelperWindowController?
     private var profileEditor: ProfileEditorState?
     private var quickSwitchWindow: NSPanel?
     private enum StoreState {
@@ -30,10 +32,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     override init() {
         let settings = AppSettings.shared
+        let permissionState = PermissionState()
         self.settings = settings
-        self.captureController = CaptureController(settings: settings)
-        self.permissionState = PermissionState()
+        self.permissionState = permissionState
+        self.captureController = CaptureController(
+            settings: settings,
+            permissionState: permissionState
+        )
         super.init()
+        captureController.onAccessibilityRequired = { [weak self] in
+            self?.presentPermissionHelpForCapture()
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -55,10 +64,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MainActor.assumeIsolated { self?.hideAuxiliaryWindows() }
         }
 
-        if !PermissionCheck.isTrusted {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                PermissionCheck.ensureAccessibility()
-            }
+        if !settings.hasCompletedSetup {
+            presentSetup()
         }
     }
 
@@ -133,6 +140,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pasteTask?.cancel()
         pasteTask = nil
         tearDownQuickSwitcher()
+        setupWindowController?.teardown()
+        setupWindowController = nil
+        accessibilityHelperWindowController?.teardown()
+        accessibilityHelperWindowController = nil
+        settingsWindow?.delegate = nil
+        settingsWindow?.close()
+        settingsWindow = nil
+        stackWindow?.delegate = nil
+        stackWindow?.close()
+        stackWindow = nil
         captureController.teardown()
         permissionState.teardown()
         store?.teardown()
@@ -711,7 +728,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.close()
     }
 
+    private func presentPermissionHelpForCapture() {
+        permissionState.refresh()
+        if settings.hasCompletedSetup {
+            presentAccessibilityHelper()
+        } else {
+            presentSetup()
+        }
+    }
+
+    private func presentSetup() {
+        permissionState.refresh()
+        if setupWindowController == nil {
+            setupWindowController = SetupWindowController(
+                settings: settings,
+                permissionState: permissionState,
+                onShowAccessibilityHelper: { [weak self] in
+                    self?.presentAccessibilityHelper()
+                },
+                onComplete: { [weak self] in
+                    self?.setupWindowController?.close()
+                }
+            )
+        }
+        setupWindowController?.show()
+    }
+
+    private func presentAccessibilityHelper() {
+        if accessibilityHelperWindowController == nil {
+            accessibilityHelperWindowController = AccessibilityHelperWindowController(
+                permissionState: permissionState
+            )
+        }
+        accessibilityHelperWindowController?.show()
+    }
+
     @objc private func showSettings() {
+        permissionState.refresh()
         if let settingsWindow {
             NSApp.activate(ignoringOtherApps: true)
             settingsWindow.makeKeyAndOrderFront(nil)
@@ -731,8 +784,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let hosting = NSHostingView(rootView: SettingsView(
             settings: settings,
             profileEditor: profileEditor,
+            permissionState: permissionState,
             onSelectProfile: { [weak self] profileID in
                 self?.requestProfileSelection(profileID)
+            },
+            onShowAccessibilityHelper: { [weak self] in
+                self?.presentAccessibilityHelper()
+            },
+            onRunSetup: { [weak self] in
+                self?.presentSetup()
             }
         ))
         window.contentView = hosting
@@ -748,6 +808,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Diag.log("hideAuxiliaryWindows stack=\(stackWindow?.isVisible ?? false) settings=\(settingsWindow?.isVisible ?? false) quickSwitch=\(quickSwitchWindow?.isVisible ?? false)")
         stackWindow?.orderOut(nil)
         settingsWindow?.orderOut(nil)
+        setupWindowController?.close()
+        accessibilityHelperWindowController?.close()
         quickSwitchWindow?.orderOut(nil)
     }
 

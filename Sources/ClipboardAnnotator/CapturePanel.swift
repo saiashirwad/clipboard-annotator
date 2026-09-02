@@ -48,6 +48,8 @@ final class CaptureController {
     private let panelWidth: CGFloat = 460
     private let panelHeight: CGFloat = 260
     private let settings: AppSettings
+    private let permissionState: PermissionState
+    var onAccessibilityRequired: (() -> Void)?
     private var lifecycle: Lifecycle = .awaitingStore
 
     private var store: AnnotationStore? {
@@ -57,9 +59,11 @@ final class CaptureController {
 
     init(
         settings: AppSettings,
+        permissionState: PermissionState,
         provenanceProbe: ProvenanceProbe = .live()
     ) {
         self.settings = settings
+        self.permissionState = permissionState
         self.provenanceProbe = provenanceProbe
     }
 
@@ -85,7 +89,10 @@ final class CaptureController {
             return
         }
 
-        guard PermissionCheck.ensureAccessibility() else { return }
+        guard permissionState.isTextCaptureReady else {
+            onAccessibilityRequired?()
+            return
+        }
 
         previousApp = NSWorkspace.shared.frontmostApplication
         let context = AnnotationCaptureContext(sessionID: store.currentSessionID)
@@ -99,7 +106,10 @@ final class CaptureController {
     /// is called by the matching global-hotkey release event.
     func beginVoiceCapture() {
         guard let store else { NSSound.beep(); return }
-        guard PermissionCheck.ensureAccessibility() else { return }
+        guard permissionState.isTextCaptureReady else {
+            onAccessibilityRequired?()
+            return
+        }
 
         if isOpen {
             NSSound.beep()
@@ -607,6 +617,7 @@ final class CaptureController {
     func teardown() {
         if case .tornDown = lifecycle { return }
         lifecycle = .tornDown
+        onAccessibilityRequired = nil
         provenanceWork.teardown()
         dismiss(returnFocus: false)
         teardownVoice(returnFocus: false)
