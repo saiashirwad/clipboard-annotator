@@ -184,14 +184,9 @@ final class CaptureController {
         panel.minSize = NSSize(width: 380, height: 220)
         panel.animationBehavior = .utilityWindow
 
-        guard let store else { return }
-        let model = CaptureModel(target: target, stackCount: store.currentEntries.count)
+        let model = CaptureModel(target: target)
         self.model = model
-        let view = CaptureView(
-            model: model,
-            onSave: { [weak self] in self?.commit() },
-            onCancel: { [weak self] in self?.dismiss(returnFocus: true) }
-        )
+        let view = CaptureView(model: model)
         // The hosting view fills the whole frame, title-bar strip included, so
         // the material runs edge to edge under the transparent title bar.
         let hosting = NSHostingView(rootView: view)

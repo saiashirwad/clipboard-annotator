@@ -5,8 +5,6 @@ import SwiftUI
 /// handles both, so nothing here needs a button.
 struct CaptureView: View {
     @Bindable var model: CaptureModel
-    let onSave: () -> Void
-    let onCancel: () -> Void
 
     @FocusState private var noteFocused: Bool
     @State private var quoteHeight: CGFloat = 0

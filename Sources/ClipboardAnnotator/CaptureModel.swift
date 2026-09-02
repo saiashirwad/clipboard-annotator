@@ -82,12 +82,10 @@ final class CaptureModel {
     var expanded = false
 
     let target: AnnotationCaptureTarget
-    let stackCount: Int
 
     var captured: CapturedSelection { target.captured }
 
-    init(target: AnnotationCaptureTarget, stackCount: Int) {
+    init(target: AnnotationCaptureTarget) {
         self.target = target
-        self.stackCount = stackCount
     }
 }
