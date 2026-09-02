@@ -756,7 +756,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: SettingsView.width, height: 560),
+            contentRect: NSRect(origin: .zero, size: SettingsView.size),
             styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -787,46 +787,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.presentSetup()
             }
         )
-        // Each tab has its own natural height; follow it with the top edge still.
-        let hosting = NSHostingView(rootView: settingsView
-            .onPreferenceChange(HeightKey.self) { [weak self] height in
-                self?.fitSettingsWindow(toContentHeight: height)
-            })
-        hosting.sizingOptions = [.intrinsicContentSize]
-        // The tab strip owns the title-bar band; no inset for the toolbar.
+        let hosting = NSHostingView(rootView: settingsView)
+        // The sidebar owns the title-bar band; no inset for the toolbar.
         hosting.safeAreaRegions = []
         window.contentView = hosting
-        window.setContentSize(hosting.fittingSize)
-        // From here on only fitSettingsWindow resizes the window. Left on,
-        // the intrinsic size would snap the window taller before the animation.
-        hosting.sizingOptions = []
+        window.setContentSize(SettingsView.size)
         window.delegate = self
         settingsWindow = window
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         // Open calmly, without the first text field selected.
         window.makeFirstResponder(nil)
-    }
-
-    private func fitSettingsWindow(toContentHeight height: CGFloat) {
-        guard let window = settingsWindow, height > 0 else { return }
-        let frame = window.frame
-        guard abs(height - frame.height) > 0.5 else { return }
-        let target = NSRect(
-            x: frame.minX,
-            y: frame.maxY - height,
-            width: frame.width,
-            height: height
-        )
-        guard window.isVisible else {
-            window.setFrame(target, display: true)
-            return
-        }
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.18
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            window.animator().setFrame(target, display: true)
-        }
     }
 
     /// Tuck away auxiliary windows so a capture shows the note box alone.

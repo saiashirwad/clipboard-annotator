@@ -27,6 +27,15 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .permissions: "checkmark.shield"
         }
     }
+
+    var tint: Color {
+        switch self {
+        case .profiles: Color(red: 0.55, green: 0.36, blue: 0.96)
+        case .shortcuts: Color(red: 0.36, green: 0.36, blue: 0.40)
+        case .capture: Color(red: 0.20, green: 0.68, blue: 0.40)
+        case .permissions: Color(red: 0.95, green: 0.55, blue: 0.16)
+        }
+    }
 }
 
 struct SettingsView: View {
@@ -39,7 +48,9 @@ struct SettingsView: View {
 
     @State private var tab: SettingsTab = .profiles
 
-    static let width: CGFloat = 700
+    static let size = CGSize(width: 780, height: 620)
+    private static let sidebarWidth: CGFloat = 200
+    private static let titleBarHeight: CGFloat = 52
 
     init(
         settings: AppSettings,
@@ -58,34 +69,35 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            SettingsTabBar(selection: $tab)
+        HStack(spacing: 0) {
+            SettingsSidebar(selection: $tab, topInset: Self.titleBarHeight)
+                .frame(width: Self.sidebarWidth)
             Divider()
-            ZStack(alignment: .top) {
-                Group {
-                    switch tab {
-                    case .profiles: profilesTab
-                    case .shortcuts: shortcutsTab
-                    case .capture: captureTab
-                    case .permissions: permissionsTab
+            VStack(spacing: 0) {
+                Text(tab.title)
+                    .font(.system(size: 15, weight: .semibold))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 24)
+                    .frame(height: Self.titleBarHeight)
+                Divider()
+                ScrollView {
+                    Group {
+                        switch tab {
+                        case .profiles: profilesTab
+                        case .shortcuts: shortcutsTab
+                        case .capture: captureTab
+                        case .permissions: permissionsTab
+                        }
                     }
+                    .padding(24)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .id(tab)
                 }
-                .padding(24)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-                .id(tab)
-                .transition(.opacity)
+                .scrollIndicators(.automatic)
             }
-            .animation(.easeOut(duration: 0.18), value: tab)
+            .background(Color(nsColor: .windowBackgroundColor))
         }
-        .frame(width: Self.width)
-        // Report the content's own height; the window follows it.
-        .background(GeometryReader { proxy in
-            Color.clear.preference(key: HeightKey.self, value: proxy.size.height)
-        })
-        // While the window animates between tab heights, keep the content
-        // pinned to the top so it reveals from the bottom instead of sliding.
-        .frame(maxHeight: .infinity, alignment: .top)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .frame(width: Self.size.width, height: Self.size.height)
         .ignoresSafeArea()
         .overlayScrollers()
     }
@@ -93,68 +105,63 @@ struct SettingsView: View {
     // MARK: - Profiles
 
     private var profilesTab: some View {
-        HStack(alignment: .top, spacing: 18) {
-            profileList
-                .frame(width: 196)
+        VStack(alignment: .leading, spacing: 18) {
+            profileChips
             profileEditorPane
         }
     }
 
-    private var profileList: some View {
+    private var profileChips: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SettingsCaption("Profiles")
-            SettingsCard {
-                VStack(spacing: 0) {
-                    ForEach(profileEditor.profiles) { profile in
-                        ProfileListRow(
-                            name: profile.name,
-                            isSelected: profile.id == profileEditor.editedProfileID,
-                            isDirty: profile.id == profileEditor.editedProfileID && profileEditor.isDirty
-                        ) {
-                            onSelectProfile(profile.id)
-                        }
+            SettingsCaption("Active profile")
+            HStack(spacing: 6) {
+                ForEach(profileEditor.profiles) { profile in
+                    ProfileChip(
+                        name: profile.name,
+                        isSelected: profile.id == profileEditor.editedProfileID,
+                        isDirty: profile.id == profileEditor.editedProfileID && profileEditor.isDirty
+                    ) {
+                        onSelectProfile(profile.id)
                     }
                 }
-                .padding(6)
-                Divider()
-                HStack(spacing: 4) {
-                    Button {
-                        _ = ProfileDialogs.saveAsNew(profileEditor)
-                    } label: {
-                        Image(systemName: "plus")
-                            .font(.system(size: 11, weight: .semibold))
-                            .frame(width: 20, height: 18)
-                    }
-                    .help("New profile from this draft…")
-                    .accessibilityLabel("New profile")
-
-                    Button(action: deleteProfile) {
-                        Image(systemName: "minus")
-                            .font(.system(size: 11, weight: .semibold))
-                            .frame(width: 20, height: 18)
-                    }
-                    .disabled(!profileEditor.canDelete || profileEditor.isDirty)
-                    .help(profileEditor.isDirty
-                        ? "Save or revert changes before deleting."
-                        : "Delete this profile…")
-                    .accessibilityLabel("Delete profile")
-                    Spacer()
+                Button {
+                    _ = ProfileDialogs.saveAsNew(profileEditor)
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 11, weight: .semibold))
+                        .frame(width: 26, height: 26)
+                        .background(Circle().fill(Color.primary.opacity(0.06)))
+                        .contentShape(Circle())
                 }
-                .buttonStyle(.borderless)
-                .controlSize(.small)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("New profile from this draft…")
+                .accessibilityLabel("New profile")
             }
-            Text("The selected profile is active. It shapes what Copy produces.")
+            Text("The selected profile is active and shapes what Copy produces.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
     private var profileEditorPane: some View {
         VStack(alignment: .leading, spacing: 14) {
-            ProfileNameField(text: $profileEditor.draft.name)
+            ProfileNameField(text: $profileEditor.draft.name) {
+                Button(action: deleteProfile) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 12, weight: .medium))
+                        .frame(width: 26, height: 26)
+                        .background(Circle().fill(Color.primary.opacity(0.06)))
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .disabled(!profileEditor.canDelete || profileEditor.isDirty)
+                .help(profileEditor.isDirty
+                    ? "Save or revert changes before deleting."
+                    : "Delete this profile…")
+                .accessibilityLabel("Delete profile")
+            }
 
             VStack(alignment: .leading, spacing: 8) {
                 SettingsCaption("Preamble")
@@ -164,7 +171,7 @@ struct SettingsView: View {
                     .scrollContentBackground(.hidden)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 8)
-                    .frame(minHeight: 168, maxHeight: 168)
+                    .frame(minHeight: 140, maxHeight: 140)
                     .background(
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
                             .fill(Color(nsColor: .textBackgroundColor))
@@ -392,25 +399,28 @@ struct SettingsView: View {
 
 // MARK: - Building blocks
 
-/// Icon tabs in the title-bar strip, like a classic preferences window.
-private struct SettingsTabBar: View {
+/// The source list on the left, with a coloured tile per section.
+private struct SettingsSidebar: View {
     @Binding var selection: SettingsTab
+    let topInset: CGFloat
 
     var body: some View {
-        HStack(spacing: 4) {
+        VStack(alignment: .leading, spacing: 2) {
+            Color.clear.frame(height: topInset)
             ForEach(SettingsTab.allCases) { tab in
-                SettingsTabButton(tab: tab, isSelected: tab == selection) {
+                SettingsSidebarRow(tab: tab, isSelected: tab == selection) {
                     selection = tab
                 }
             }
+            Spacer()
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: 52)
-        .background(Color.primary.opacity(0.025))
+        .padding(.horizontal, 10)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .background(Color.primary.opacity(0.035))
     }
 }
 
-private struct SettingsTabButton: View {
+private struct SettingsSidebarRow: View {
     let tab: SettingsTab
     let isSelected: Bool
     let action: () -> Void
@@ -419,39 +429,87 @@ private struct SettingsTabButton: View {
 
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 2) {
+            HStack(spacing: 9) {
                 Image(systemName: tab.icon)
-                    .font(.system(size: 17, weight: .regular))
-                    .frame(height: 22)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 24, height: 24)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(tab.tint)
+                    )
+                    .shadow(color: tab.tint.opacity(0.35), radius: 2, y: 1)
+                    .accessibilityHidden(true)
                 Text(tab.title)
-                    .font(.system(size: 10.5, weight: isSelected ? .medium : .regular))
+                    .font(.system(size: 13, weight: isSelected ? .medium : .regular))
+                Spacer(minLength: 0)
             }
-            .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
-            .frame(width: 76, height: 44)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.primary.opacity(isSelected ? 0.08 : hovering ? 0.04 : 0))
-            )
+            .padding(.horizontal, 8)
+            .frame(height: 34)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .foregroundStyle(isSelected ? Color.white : Color.primary)
+        .background(
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(isSelected
+                    ? Color.accentColor
+                    : Color.primary.opacity(hovering ? 0.05 : 0))
+        )
         .onHover { hovering = $0 }
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
 }
 
+private struct ProfileChip: View {
+    let name: String
+    let isSelected: Bool
+    let isDirty: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Text(name)
+                    .font(.system(size: 12, weight: .medium))
+                    .lineLimit(1)
+                if isDirty {
+                    Circle()
+                        .fill(isSelected ? Color.white : Color.accentColor)
+                        .frame(width: 5, height: 5)
+                        .accessibilityLabel("Unsaved changes")
+                }
+            }
+            .padding(.horizontal, 11)
+            .frame(height: 26)
+            .background(
+                Capsule().fill(isSelected ? Color.accentColor : Color.primary.opacity(0.06))
+            )
+            .foregroundStyle(isSelected ? Color.white : Color.primary)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+    }
+}
+
 /// The profile's name, set as an editable title rather than a form field.
-private struct ProfileNameField: View {
+private struct ProfileNameField<Accessory: View>: View {
     @Binding var text: String
+    @ViewBuilder let accessory: () -> Accessory
     @FocusState private var focused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            TextField("Profile name", text: $text)
-                .textFieldStyle(.plain)
-                .font(.system(size: 22, weight: .semibold))
-                .focused($focused)
-                .accessibilityLabel("Profile name")
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 12) {
+                TextField("Profile name", text: $text)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 22, weight: .semibold))
+                    .focused($focused)
+                    .accessibilityLabel("Profile name")
+                accessory()
+            }
             Rectangle()
                 .fill(focused ? Color.accentColor.opacity(0.6) : Color.primary.opacity(0.1))
                 .frame(height: 1)
@@ -559,50 +617,6 @@ private struct SettingsIcon: View {
             .frame(width: 30, height: 30)
             .background(.tint.opacity(0.1), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .accessibilityHidden(true)
-    }
-}
-
-private struct ProfileListRow: View {
-    let name: String
-    let isSelected: Bool
-    let isDirty: Bool
-    let action: () -> Void
-
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 10, weight: .bold))
-                    .opacity(isSelected ? 1 : 0)
-                    .frame(width: 12)
-                Text(name)
-                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
-                    .lineLimit(1)
-                Spacer(minLength: 4)
-                if isDirty {
-                    Circle()
-                        .fill(Color.accentColor)
-                        .frame(width: 6, height: 6)
-                        .accessibilityLabel("Unsaved changes")
-                }
-            }
-            .padding(.horizontal, 8)
-            .frame(height: 28)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(isSelected ? Color.white : Color.primary)
-        .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(isSelected
-                    ? Color.accentColor
-                    : Color.primary.opacity(hovering ? 0.05 : 0))
-        )
-        .onHover { hovering = $0 }
-        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }
 }
 
