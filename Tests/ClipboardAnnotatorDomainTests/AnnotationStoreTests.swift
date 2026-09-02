@@ -111,11 +111,19 @@ final class AnnotationStoreTests: XCTestCase {
         }
         let first = annotation(note: "first")
         let second = annotation(note: "second")
+        var outcomeEvents: [MutationOutcomeEvent] = []
 
-        store.mutate(.addAnnotation(sessionID: sessionID, annotation: first))
-        store.mutate(.addAnnotation(sessionID: sessionID, annotation: second))
+        store.mutate(.addAnnotation(sessionID: sessionID, annotation: first), outcome: {
+            outcomeEvents.append(MutationOutcomeEvent(mutation: "first", outcome: $0))
+        })
+        store.mutate(.addAnnotation(sessionID: sessionID, annotation: second), outcome: {
+            outcomeEvents.append(MutationOutcomeEvent(mutation: "second", outcome: $0))
+        })
         await store.waitForIdle()
 
+        XCTAssertEqual(outcomeEvents, [
+            MutationOutcomeEvent(mutation: "first", outcome: .commitFailed("failed")),
+        ])
         XCTAssertEqual(store.currentEntries, [])
         XCTAssertEqual(store.error, .commitFailed("failed"))
         XCTAssertTrue(store.hasPendingMutations)
@@ -126,6 +134,11 @@ final class AnnotationStoreTests: XCTestCase {
         store.retryPendingMutations()
         await store.waitForIdle()
 
+        XCTAssertEqual(outcomeEvents, [
+            MutationOutcomeEvent(mutation: "first", outcome: .commitFailed("failed")),
+            MutationOutcomeEvent(mutation: "first", outcome: .committed),
+            MutationOutcomeEvent(mutation: "second", outcome: .committed),
+        ])
         XCTAssertEqual(store.currentEntries, [first, second])
         XCTAssertNil(store.error)
         XCTAssertFalse(store.hasPendingMutations)
@@ -136,6 +149,63 @@ final class AnnotationStoreTests: XCTestCase {
             ["first"],
             ["first", "second"],
         ])
+    }
+
+    func testDeleteThenAddToDeletedSessionRejectsInQueueOrder() async throws {
+        let first = document(name: "First").sessions[0]
+        let second = Session(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000020")!,
+            name: "Second",
+            createdAt: now
+        )
+        let original = StoreDocument(
+            sessions: [first, second],
+            currentSessionID: first.id
+        )
+        let recorder = CommitRecorder()
+        let store = try await AnnotationStore(persistence: StorePersistence(
+            load: { original },
+            commit: { document in await recorder.record(document) }
+        ))
+        var outcomes: [AnnotationStoreMutationOutcome] = []
+
+        store.mutate(.deleteSession(sessionID: first.id), outcome: { outcomes.append($0) })
+        store.mutate(
+            .addAnnotation(sessionID: first.id, annotation: annotation(note: "too late")),
+            outcome: { outcomes.append($0) }
+        )
+        await store.waitForIdle()
+
+        XCTAssertEqual(outcomes, [
+            .committed,
+            .rejected("The target session no longer exists."),
+        ])
+        XCTAssertEqual(store.sessions, [second])
+        XCTAssertEqual(store.error, .mutationRejected("The target session no longer exists."))
+        let commits = await recorder.documents()
+        XCTAssertEqual(commits.count, 1)
+    }
+
+    func testNoOpOutcomeFiresOnceAfterMutationIsRemoved() async throws {
+        let original = document()
+        let recorder = CommitRecorder()
+        let store = try await AnnotationStore(persistence: StorePersistence(
+            load: { original },
+            commit: { document in await recorder.record(document) }
+        ))
+        var outcomes: [AnnotationStoreMutationOutcome] = []
+        var pendingStates: [Bool] = []
+
+        store.mutate(.switchSession(sessionID: sessionID), outcome: { outcome in
+            outcomes.append(outcome)
+            pendingStates.append(store.hasPendingMutations)
+        })
+        await store.waitForIdle()
+
+        XCTAssertEqual(outcomes, [.noOp])
+        XCTAssertEqual(pendingStates, [false])
+        let commits = await recorder.documents()
+        XCTAssertEqual(commits, [])
     }
 
     func testRapidMutationsCommitInOrderWithoutLostUpdates() async throws {
@@ -310,13 +380,20 @@ final class AnnotationStoreTests: XCTestCase {
             }
         )
         var callbackCount = 0
+        var outcomeEvents: [MutationOutcomeEvent] = []
         let store = try await AnnotationStore(persistence: persistence) {
             callbackCount += 1
         }
 
-        store.mutate(.addAnnotation(sessionID: sessionID, annotation: annotation(note: "in flight")))
+        store.mutate(
+            .addAnnotation(sessionID: sessionID, annotation: annotation(note: "in flight")),
+            outcome: { outcomeEvents.append(MutationOutcomeEvent(mutation: "active", outcome: $0)) }
+        )
         await fulfillment(of: [commitStarted], timeout: 1)
-        store.mutate(.addAnnotation(sessionID: sessionID, annotation: annotation(note: "queued")))
+        store.mutate(
+            .addAnnotation(sessionID: sessionID, annotation: annotation(note: "queued")),
+            outcome: { outcomeEvents.append(MutationOutcomeEvent(mutation: "queued", outcome: $0)) }
+        )
         let idleWaiter = Task { await store.waitForIdle() }
         await Task.yield()
 
@@ -324,6 +401,10 @@ final class AnnotationStoreTests: XCTestCase {
         store.teardown()
         await idleWaiter.value
 
+        XCTAssertEqual(outcomeEvents, [
+            MutationOutcomeEvent(mutation: "active", outcome: .cancelled),
+            MutationOutcomeEvent(mutation: "queued", outcome: .cancelled),
+        ])
         XCTAssertTrue(store.isTornDown)
         XCTAssertFalse(store.hasPendingMutations)
         XCTAssertEqual(store.currentEntries, [])
@@ -338,6 +419,10 @@ final class AnnotationStoreTests: XCTestCase {
         await fulfillment(of: [commitReturned], timeout: 1)
         commitAttemptCount = await attempts.count()
         XCTAssertEqual(commitAttemptCount, 1)
+        XCTAssertEqual(outcomeEvents, [
+            MutationOutcomeEvent(mutation: "active", outcome: .cancelled),
+            MutationOutcomeEvent(mutation: "queued", outcome: .cancelled),
+        ])
         XCTAssertEqual(store.currentEntries, [])
         XCTAssertEqual(callbackCount, 0)
     }
@@ -357,6 +442,11 @@ final class AnnotationStoreTests: XCTestCase {
             createdAt: now
         )
     }
+}
+
+private struct MutationOutcomeEvent: Equatable {
+    let mutation: String
+    let outcome: AnnotationStoreMutationOutcome
 }
 
 private enum TestFailure: Error, CustomStringConvertible {
