@@ -360,6 +360,25 @@ final class PendingProvenanceWorkOwnerTests: XCTestCase {
         store.teardown()
     }
 
+    func testAbandonAfterSavePreparationRejectsLateResult() async throws {
+        let gate = FieldsGate()
+        var updates: [SessionDocumentMutation] = []
+        let owner = makeOwner(gate: gate) { updates.append($0) }
+        let target = makeTarget()
+        owner.start(for: target)
+        await gate.waitUntilRequested()
+
+        let baseline = try XCTUnwrap(CaptureAnnotationPolicy.annotation(for: target, note: "Note"))
+        XCTAssertEqual(owner.annotationForSave(baseline, target: target), baseline)
+        owner.abandon(for: target)
+
+        await gate.resolve(ProvenanceFields(windowTitle: "Too late"))
+        await owner.waitForIdle()
+        XCTAssertEqual(owner.pendingCount, 0)
+        XCTAssertEqual(owner.pendingTaskCount, 0)
+        XCTAssertTrue(updates.isEmpty)
+    }
+
     func testUnsavedCancelAndAppTeardownRejectLateResults() async {
         let firstGate = FieldsGate()
         var firstUpdates: [SessionDocumentMutation] = []
@@ -446,10 +465,21 @@ final class PendingProvenanceWorkOwnerTests: XCTestCase {
     private actor FieldsGate {
         private var result: ProvenanceFields?
         private var continuation: CheckedContinuation<ProvenanceFields, Never>?
+        private var wasRequested = false
+        private var requestWaiters: [CheckedContinuation<Void, Never>] = []
 
         func value() async -> ProvenanceFields {
+            wasRequested = true
+            let waiters = requestWaiters
+            requestWaiters.removeAll()
+            waiters.forEach { $0.resume() }
             if let result { return result }
             return await withCheckedContinuation { continuation = $0 }
+        }
+
+        func waitUntilRequested() async {
+            guard !wasRequested else { return }
+            await withCheckedContinuation { requestWaiters.append($0) }
         }
 
         func resolve(_ fields: ProvenanceFields) {

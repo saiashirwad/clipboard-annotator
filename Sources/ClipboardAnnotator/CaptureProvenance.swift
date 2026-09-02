@@ -30,6 +30,7 @@ final class PendingProvenanceWorkOwner {
     private let probe: ProvenanceProbe
     private let lateUpdate: LateUpdate
     private var workByCaptureID: [UUID: Work] = [:]
+    private var activeTaskCaptureIDs: Set<UUID> = []
     private var idleWaiters: [CheckedContinuation<Void, Never>] = []
     private(set) var isTornDown = false
 
@@ -39,7 +40,7 @@ final class PendingProvenanceWorkOwner {
     }
 
     var pendingCount: Int { workByCaptureID.count }
-    var pendingTaskCount: Int { workByCaptureID.values.filter { $0.task != nil }.count }
+    var pendingTaskCount: Int { activeTaskCaptureIDs.count }
 
     func waitForIdle() async {
         guard pendingTaskCount > 0 else { return }
@@ -47,7 +48,10 @@ final class PendingProvenanceWorkOwner {
     }
 
     func start(for target: AnnotationCaptureTarget) {
-        guard !isTornDown, workByCaptureID[target.captureID] == nil else { return }
+        guard !isTornDown,
+              workByCaptureID[target.captureID] == nil,
+              !activeTaskCaptureIDs.contains(target.captureID)
+        else { return }
         let route = Route(target: target)
         let application = CapturedApplication(
             identity: target.application,
@@ -59,11 +63,14 @@ final class PendingProvenanceWorkOwner {
             provenance: nil,
             savedAnnotation: nil
         )
+        activeTaskCaptureIDs.insert(route.captureID)
 
         let task = Task { [weak self, probe] in
             let provenance = await probe.probe(application)
-            guard !Task.isCancelled else { return }
-            self?.probeFinished(provenance, route: route)
+            if !Task.isCancelled {
+                self?.probeFinished(provenance, route: route)
+            }
+            self?.probeTaskFinished(captureID: route.captureID)
         }
         workByCaptureID[route.captureID]?.task = task
     }
@@ -95,11 +102,22 @@ final class PendingProvenanceWorkOwner {
         return annotation
     }
 
-    /// Cancels only if this capture has not been saved.
+    /// Cancels only if this capture has not been queued for a save.
     func cancelBeforeSave(for target: AnnotationCaptureTarget) {
         guard let work = workByCaptureID[target.captureID],
               work.route == Route(target: target),
               work.savedAnnotation == nil
+        else { return }
+        work.task?.cancel()
+        workByCaptureID.removeValue(forKey: target.captureID)
+        resumeIdleWaitersIfNeeded()
+    }
+
+    /// Cancels matching work even after it was prepared for a save. Use this
+    /// only when that save was rejected or the user chose a new destination.
+    func abandon(for target: AnnotationCaptureTarget) {
+        guard let work = workByCaptureID[target.captureID],
+              work.route == Route(target: target)
         else { return }
         work.task?.cancel()
         workByCaptureID.removeValue(forKey: target.captureID)
@@ -111,6 +129,7 @@ final class PendingProvenanceWorkOwner {
         isTornDown = true
         let work = workByCaptureID.values
         workByCaptureID.removeAll()
+        activeTaskCaptureIDs.removeAll()
         work.forEach { $0.task?.cancel() }
         resumeIdleWaitersIfNeeded()
     }
@@ -120,7 +139,6 @@ final class PendingProvenanceWorkOwner {
               var work = workByCaptureID[route.captureID],
               work.route == route
         else { return }
-        defer { resumeIdleWaitersIfNeeded() }
         work.task = nil
 
         guard provenance.application == route.application else {
@@ -147,6 +165,11 @@ final class PendingProvenanceWorkOwner {
             expectedApplication: route.application,
             provenance: provenance
         ))
+    }
+
+    private func probeTaskFinished(captureID: UUID) {
+        activeTaskCaptureIDs.remove(captureID)
+        resumeIdleWaitersIfNeeded()
     }
 
     private func resumeIdleWaitersIfNeeded() {

@@ -46,10 +46,11 @@ final class CaptureController {
     }
 
     private let panelWidth: CGFloat = 460
-    private let panelHeight: CGFloat = 260
+    private let panelHeight: CGFloat = 340
     private let settings: AppSettings
     private let permissionState: PermissionState
     var onAccessibilityRequired: (() -> Void)?
+    var onStatusChange: (() -> Void)?
     private var lifecycle: Lifecycle = .awaitingStore
 
     private var store: AnnotationStore? {
@@ -81,7 +82,7 @@ final class CaptureController {
     var isOpen: Bool { panel != nil || voiceModel != nil }
 
     func beginCapture() {
-        guard let store else { NSSound.beep(); return }
+        guard let store, !store.isTornDown else { NSSound.beep(); return }
         if isOpen {
             // Second press while open: just bring it back to the front.
             NSApp.activate(ignoringOtherApps: true)
@@ -105,7 +106,7 @@ final class CaptureController {
     /// Starts a capture and a microphone recording together. `endVoiceCapture`
     /// is called by the matching global-hotkey release event.
     func beginVoiceCapture() {
-        guard let store else { NSSound.beep(); return }
+        guard let store, !store.isTornDown else { NSSound.beep(); return }
         guard permissionState.isTextCaptureReady else {
             onAccessibilityRequired?()
             return
@@ -196,7 +197,12 @@ final class CaptureController {
 
         let model = CaptureModel(target: target)
         self.model = model
-        let view = CaptureView(model: model)
+        let view = CaptureView(
+            model: model,
+            onRetry: { [weak self] in self?.retryTypedSave() },
+            onSaveToCurrentSession: { [weak self] in self?.saveTypedCaptureToCurrentSession() },
+            onDiscard: { [weak self] in self?.discardTypedCapture() }
+        )
         // The hosting view fills the whole frame, title-bar strip included, so
         // the material runs edge to edge under the transparent title bar.
         let hosting = NSHostingView(rootView: view)
@@ -307,7 +313,9 @@ final class CaptureController {
             guard let self, let panel = self.panel, event.window === panel else { return event }
             let isReturn = event.keyCode == 36 || event.keyCode == 76
             if isReturn && event.modifierFlags.contains(.command) {
-                self.commit()
+                if self.model?.canBeginCommit == true {
+                    self.commit()
+                }
                 return nil
             }
             if event.keyCode == 53 { // escape
@@ -522,6 +530,7 @@ final class CaptureController {
     /// Saves the panel that is actually on screen. Nothing else can trigger it.
     private func commit() {
         guard let model, panel != nil,
+              model.canBeginCommit,
               let annotation = CaptureAnnotationPolicy.annotation(
                 for: model.target,
                 note: model.note
@@ -532,21 +541,103 @@ final class CaptureController {
             NSSound.beep()
             return
         }
+
         let savedAnnotation = provenanceWork.annotationForSave(
             annotation,
             target: model.target
         )
-        store.mutate(.addAnnotation(
-            sessionID: model.target.sessionID,
-            annotation: savedAnnotation
-        ))
-        Diag.log("saved annotation")
+        guard let request = model.beginCommit(
+            annotation: savedAnnotation,
+            destinationSessionID: model.target.sessionID
+        ) else {
+            NSSound.beep()
+            return
+        }
+        enqueueTypedSave(request, model: model, store: store)
+    }
+
+    private func retryTypedSave() {
+        guard let model, panel != nil,
+              let store, !store.isTornDown,
+              model.retryPendingCommit()
+        else {
+            NSSound.beep()
+            return
+        }
+        store.retryPendingMutations()
+        onStatusChange?()
+    }
+
+    private func saveTypedCaptureToCurrentSession() {
+        guard let model, panel != nil,
+              let store, !store.isTornDown
+        else {
+            NSSound.beep()
+            return
+        }
+
+        guard let request = model.beginRetarget(
+            destinationSessionID: store.currentSessionID
+        ) else {
+            NSSound.beep()
+            return
+        }
+        // This is the only retarget path. Stop the old provenance route before
+        // using the same frozen annotation in the current committed session.
+        provenanceWork.abandon(for: model.target)
+        enqueueTypedSave(request, model: model, store: store)
+    }
+
+    private func discardTypedCapture() {
+        guard let model, panel != nil,
+              model.discard() == .abandonProvenance
+        else {
+            NSSound.beep()
+            return
+        }
+        provenanceWork.abandon(for: model.target)
         dismiss(returnFocus: true)
+        onStatusChange?()
+    }
+
+    private func enqueueTypedSave(
+        _ request: CaptureSaveRequest,
+        model: CaptureModel,
+        store: AnnotationStore
+    ) {
+        store.mutate(.addAnnotation(
+            sessionID: request.identity.destinationSessionID,
+            annotation: request.annotation
+        ), outcome: { [weak self, weak store, model] outcome in
+            guard let self else { return }
+            let destinationStillExists = store?.sessions.contains {
+                $0.id == request.identity.destinationSessionID
+            } ?? false
+            let action = model.receive(
+                outcome,
+                for: request.identity,
+                destinationStillExists: destinationStillExists
+            )
+            if CaptureSaveOutcomeRouting.abandonsProvenance(after: outcome) {
+                // The exact add left the queue. Abandon its route even if the
+                // user already hid the panel and the model ignored the outcome.
+                self.provenanceWork.abandon(for: model.target)
+            }
+            self.onStatusChange?()
+
+            guard self.model === model, self.panel != nil else { return }
+            if action == .dismiss {
+                Diag.log("saved annotation")
+                self.dismiss(returnFocus: true)
+            }
+        })
+        onStatusChange?()
     }
 
     func dismiss(returnFocus: Bool) {
-        if let target = model?.target {
-            provenanceWork.cancelBeforeSave(for: target)
+        if let model,
+           model.dismiss() == .abandonProvenance {
+            provenanceWork.abandon(for: model.target)
         }
         if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
         keyMonitor = nil
@@ -618,6 +709,7 @@ final class CaptureController {
         if case .tornDown = lifecycle { return }
         lifecycle = .tornDown
         onAccessibilityRequired = nil
+        onStatusChange = nil
         provenanceWork.teardown()
         dismiss(returnFocus: false)
         teardownVoice(returnFocus: false)

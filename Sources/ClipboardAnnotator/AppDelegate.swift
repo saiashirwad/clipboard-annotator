@@ -43,6 +43,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         captureController.onAccessibilityRequired = { [weak self] in
             self?.presentPermissionHelpForCapture()
         }
+        captureController.onStatusChange = { [weak self] in
+            self?.refreshStatusItem()
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
