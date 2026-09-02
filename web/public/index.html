@@ -22,23 +22,22 @@
       --accent-fg: #ffffff;
       --mark: #ffd84d;
       --mark-fg: #2b2a5a;
-      --rec: #e5484d;
-      --radius: 12px;
+      --desk: #e9e9ef;
       color-scheme: light dark;
     }
     @media (prefers-color-scheme: dark) {
       :root {
-        --bg: #0f0f13;
-        --bg-2: #17171d;
-        --fg: #ededf2;
-        --fg-2: #a3a3b3;
-        --fg-3: #6b6b7b;
-        --line: #26262f;
+        --bg: #1c1c22;
+        --bg-2: #25252d;
+        --fg: #f0f0f4;
+        --fg-2: #b0b0be;
+        --fg-3: #7d7d8c;
+        --line: #35353f;
         --accent: #7a7aff;
         --accent-fg: #0f0f13;
         --mark: #e6c23a;
         --mark-fg: #1a1a2e;
-        --rec: #ff6b6b;
+        --desk: #2c2c36;
       }
     }
 
@@ -57,20 +56,22 @@
     p { margin: 0 0 1em; }
     h1 { margin: 0; font-weight: 600; letter-spacing: -0.025em; line-height: 1.08; font-size: clamp(2.3rem, 6vw, 3.8rem); }
 
-    .wrap { max-width: 1040px; margin: 0 auto; padding: 0 24px; }
-
-    nav {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 20px 0;
+    /* ---------- split layout ---------- */
+    .split {
+      display: grid;
+      grid-template-columns: minmax(340px, 34%) 1fr;
+      min-height: 100vh;
+    }
+    .side {
+      display: flex; flex-direction: column;
+      padding: 28px 44px 28px 48px;
     }
     .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; }
     .brand img { width: 28px; height: 28px; }
-    nav .links { display: flex; gap: 22px; font-size: 0.95rem; color: var(--fg-2); }
-    nav .links a:hover { color: var(--fg); }
-
-    .hero { padding: 56px 0 24px; text-align: center; }
-    .hero .lede { font-size: 1.2rem; color: var(--fg-2); margin: 1em auto 1.6em; max-width: 520px; }
-    .actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: center; }
+    .hero { margin: auto 0; padding: 48px 0; }
+    .hero h1 { font-size: clamp(2.2rem, 3.6vw, 3.5rem); }
+    .hero .lede { font-size: 1.15rem; color: var(--fg-2); margin: 1.1em 0 1.7em; max-width: 26em; }
+    .actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
     .btn {
       display: inline-flex; align-items: center; gap: 8px;
       padding: 12px 20px; border-radius: 10px;
@@ -84,24 +85,36 @@
     .btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
     .btn.primary:hover { filter: brightness(1.08); }
     .fine { font-size: 0.9rem; color: var(--fg-3); margin-top: 14px; }
+    .side footer {
+      font-size: 0.9rem; color: var(--fg-3);
+      display: flex; flex-wrap: wrap; gap: 6px 18px;
+    }
+    .side footer a:hover { color: var(--fg); }
+    .stage {
+      border-left: 1px solid var(--line);
+      min-width: 0;
+      position: relative;
+    }
 
-    /* ---------- animated scene ---------- */
-    .scene-wrap { padding: 32px 0 80px; }
+    /* ================= scene ================= */
     .scene {
       position: relative;
-      background: var(--bg-2);
-      border: 1px solid var(--line);
-      border-radius: 16px;
+      width: 100%; height: 100%;
+      background: var(--desk);
       overflow: hidden;
-      font-size: clamp(11px, 1.35vw, 14px);
+      font-size: clamp(8.5px, min(1.2vw, 2vh), 18px);
       line-height: 1.5;
+      min-height: 34em;
       user-select: none;
     }
+
+    /* menu bar */
     .menubar {
+      position: absolute; inset: 0 0 auto 0; z-index: 5;
       display: flex; align-items: center; justify-content: flex-end; gap: 1.2em;
-      height: 2.4em; padding: 0 1.2em;
-      border-bottom: 1px solid var(--line);
+      height: 2.3em; padding: 0 1.2em;
       background: var(--bg);
+      border-bottom: 1px solid var(--line);
       color: var(--fg-3); font-size: 0.85em;
     }
     .menubar .item { display: flex; align-items: center; gap: 0.4em; }
@@ -115,217 +128,238 @@
     }
     .menubar .badge.on { transform: scale(1); }
     .menubar .badge.bump { animation: bump 0.35s ease; }
-    @keyframes bump { 40% { transform: scale(1.35); } }
+    @keyframes bump { 40% { transform: scale(1.4); } }
 
-    .desk {
-      display: grid; grid-template-columns: 1.15fr 1fr; gap: 1.4em;
-      padding: 1.4em;
-      min-height: 26em;
-    }
+    /* browser window showing chatgpt.com */
     .win {
-      position: relative;
+      position: absolute; left: 1.6em; right: 1.6em; top: 3.5em; bottom: 1.4em;
       background: var(--bg);
       border: 1px solid var(--line);
       border-radius: 10px;
       overflow: hidden;
       display: flex; flex-direction: column;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.10);
     }
     .win .bar {
       display: flex; align-items: center; gap: 0.6em;
-      padding: 0.6em 0.9em;
+      padding: 0.5em 0.9em;
       border-bottom: 1px solid var(--line);
       color: var(--fg-3); font-size: 0.85em;
+      background: var(--bg-2);
     }
     .dots { display: flex; gap: 0.4em; }
     .dots i { width: 0.7em; height: 0.7em; border-radius: 50%; background: var(--line); display: block; }
-    .win .bar .title { flex: 1; text-align: center; margin-right: 2.6em; }
-
-    .reader { padding: 1.2em 1.3em; color: var(--fg-2); flex: 1; }
-    .reader p { margin: 0 0 0.8em; }
-    .reader .h { color: var(--fg); font-weight: 600; margin-bottom: 0.6em; }
+    .win .bar .url {
+      flex: 1; max-width: 22em; margin: 0 auto;
+      text-align: center; background: var(--bg); border: 1px solid var(--line);
+      border-radius: 0.5em; padding: 0.15em 0.8em; color: var(--fg-2);
+    }
+    .win .bar .sp { width: 3.2em; }
+    .msgs {
+      flex: 1; overflow: hidden;
+      padding: 1em 1.2em 0.6em;
+      scroll-behavior: smooth;
+    }
+    .col { max-width: 44em; margin: 0 auto; display: flex; flex-direction: column; gap: 1.1em; }
+    .user {
+      align-self: flex-end; max-width: 72%;
+      background: var(--bg-2); color: var(--fg);
+      border-radius: 1.3em; padding: 0.55em 1em;
+      font-size: 0.95em; line-height: 1.45; white-space: pre-wrap;
+    }
+    .user.pending { opacity: 0; transform: translateY(8px); transition: opacity 0.25s ease, transform 0.25s ease; }
+    .user.on { opacity: 1; transform: none; }
+    .user .dim { color: var(--fg-3); }
+    .assistant { color: var(--fg-2); font-size: 0.95em; line-height: 1.55; }
+    .assistant p { margin: 0 0 0.8em; }
+    .assistant .h { color: var(--fg); font-weight: 600; margin-bottom: 0.5em; }
+    .assistant .typing i { display: inline-block; width: 0.5em; height: 0.5em; border-radius: 50%; background: var(--fg); margin-right: 0.15em; animation: pulse 1s ease-in-out infinite; }
+    .assistant .typing i:nth-child(2) { animation-delay: 0.15s; }
+    .assistant .typing i:nth-child(3) { animation-delay: 0.3s; }
+    @keyframes pulse { 50% { opacity: 0.25; } }
+    .assistant .w { opacity: 0; transition: opacity 0.2s ease; }
+    .assistant .w.on { opacity: 1; }
     .sel {
       background-image: linear-gradient(var(--mark), var(--mark));
       background-repeat: no-repeat;
       background-size: 0% 100%;
-      transition: background-size 0.55s ease;
-      color: inherit;
+      transition: background-size 0.5s ease, color 0.3s ease;
       border-radius: 2px;
       -webkit-box-decoration-break: clone; box-decoration-break: clone;
     }
     .sel.on { background-size: 100% 100%; color: var(--mark-fg); }
 
-    /* capture panel floating over the reader */
-    .panel {
-      position: absolute; left: 1em; right: 1em; bottom: 1em;
+    .composer-wrap { padding: 0.5em 1.2em 0.9em; }
+    .composer {
+      max-width: 44em; margin: 0 auto;
+      display: flex; align-items: flex-end; gap: 0.7em;
+      border: 1px solid var(--line); border-radius: 1.6em;
       background: var(--bg-2);
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      padding: 0.8em;
-      box-shadow: 0 12px 30px rgba(0,0,0,0.12);
-      opacity: 0; transform: translateY(10px) scale(0.98);
-      transition: opacity 0.22s ease, transform 0.22s ease;
+      padding: 0.7em 0.7em 0.7em 1em;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .composer .plus, .composer .send {
+      flex: none; width: 2em; height: 2em; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.95em; color: var(--fg-2); border: 1px solid var(--line);
+    }
+    .composer .send { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+    .composer .text {
+      flex: 1; min-height: 2em; max-height: 8.5em; overflow: hidden;
+      font-size: 0.9em; line-height: 1.45; color: var(--fg); white-space: pre-wrap;
+      padding: 0.3em 0;
+    }
+    .composer .text .ph { color: var(--fg-3); }
+    .composer .text b { font-weight: 600; }
+    .composer.flash { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+
+    /* voice capsule, matches the app's overlay */
+    .capsule {
+      position: absolute; left: 50%; bottom: 3.2em; z-index: 10;
+      transform: translate(-50%, 1.2em) scale(0.92);
+      opacity: 0;
+      display: flex; align-items: center; gap: 0.85em;
+      height: 3.85em; padding: 0 1.45em 0 1.15em;
+      border-radius: 3em;
+      background: rgba(28, 28, 34, 0.86);
+      -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
+      box-shadow: 0 8px 18px rgba(0,0,0,0.38), inset 0 0 0 1px rgba(255,255,255,0.14);
+      color: #fff;
+      transition: opacity 0.22s ease, transform 0.22s cubic-bezier(.2,.9,.3,1.2);
       pointer-events: none;
     }
-    .panel.on { opacity: 1; transform: none; }
-    .panel.out { opacity: 0; transform: translateY(-40px) scale(0.6); transition: opacity 0.3s ease, transform 0.35s cubic-bezier(.4,0,.8,.4); }
-    .panel .q {
-      font-size: 0.92em; color: var(--fg-2);
-      background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
-      padding: 0.5em 0.7em; margin-bottom: 0.6em;
-      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-    }
-    .panel .n {
-      min-height: 3.4em;
-      background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
-      padding: 0.5em 0.7em; color: var(--fg);
-    }
-    .panel .n .ph { color: var(--fg-3); }
-    .panel .n .w { opacity: 0; transition: opacity 0.18s ease; }
-    .panel .n .w.on { opacity: 1; }
-    .panel .foot { display: flex; align-items: center; justify-content: space-between; margin-top: 0.6em; font-size: 0.82em; color: var(--fg-3); }
-    .mic {
-      display: inline-flex; align-items: center; gap: 0.5em;
-      padding: 0.25em 0.6em; border-radius: 1em;
-      background: var(--bg); border: 1px solid var(--line);
-      color: var(--fg-3);
-      transition: color 0.2s, border-color 0.2s;
-    }
-    .mic .dot { width: 0.6em; height: 0.6em; border-radius: 50%; background: var(--fg-3); }
-    .mic .bars { display: none; gap: 0.15em; align-items: center; height: 1em; }
-    .mic .bars i { width: 0.2em; height: 0.3em; background: var(--rec); border-radius: 1px; display: block; }
-    .mic.rec { color: var(--rec); border-color: var(--rec); }
-    .mic.rec .dot { display: none; }
-    .mic.rec .bars { display: inline-flex; }
-    .mic.rec .bars i { animation: lvl 0.6s ease-in-out infinite; }
-    .mic.rec .bars i:nth-child(2) { animation-delay: 0.1s; }
-    .mic.rec .bars i:nth-child(3) { animation-delay: 0.2s; }
-    .mic.rec .bars i:nth-child(4) { animation-delay: 0.05s; }
-    .mic.rec .bars i:nth-child(5) { animation-delay: 0.15s; }
-    @keyframes lvl { 0%,100% { height: 0.3em; } 50% { height: 1em; } }
+    .capsule.on { opacity: 1; transform: translate(-50%, 0) scale(1); }
+    .capsule .ind { width: 1.3em; height: 1.3em; position: relative; flex: none; }
+    .capsule .dot, .capsule .halo { position: absolute; inset: 0; margin: auto; border-radius: 50%; background: #ff453a; }
+    .capsule .dot { width: 0.65em; height: 0.65em; }
+    .capsule .halo { width: 1.3em; height: 1.3em; opacity: 0; animation: halo 1.9s ease-out infinite; }
+    @keyframes halo { 0% { transform: scale(0.5); opacity: 0.35; } 100% { transform: scale(1.15); opacity: 0; } }
+    .capsule .arc { position: absolute; inset: 0.1em; border-radius: 50%; border: 0.16em solid transparent; border-top-color: #fff; border-right-color: rgba(255,255,255,0.5); animation: spin 0.9s linear infinite; display: none; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .capsule.busy .dot, .capsule.busy .halo { display: none; }
+    .capsule.busy .arc { display: block; }
+    .capsule canvas { width: 9.2em; height: 1.9em; display: block; }
+    .capsule .txt { display: flex; flex-direction: column; line-height: 1.2; white-space: nowrap; }
+    .capsule .t { font-size: 0.93em; font-weight: 600; }
+    .capsule .s { font-size: 0.78em; color: rgba(255,255,255,0.55); }
 
-    /* chat window */
-    .chat { display: flex; flex-direction: column; flex: 1; }
-    .chat .msgs { flex: 1; padding: 1em; display: flex; flex-direction: column; gap: 0.7em; justify-content: flex-end; }
-    .chat .bubble {
-      align-self: flex-end; max-width: 92%;
-      background: var(--accent); color: var(--accent-fg);
-      border-radius: 12px 12px 3px 12px;
-      padding: 0.6em 0.8em;
-      font-size: 0.88em; line-height: 1.45;
-      opacity: 0; transform: translateY(8px);
-      transition: opacity 0.25s ease, transform 0.25s ease;
-      white-space: pre-wrap;
+    /* subtitles, what's being said */
+    .subs {
+      position: absolute; left: 50%; bottom: 8.2em; z-index: 10;
+      transform: translateX(-50%);
+      max-width: 34em; text-align: center;
+      font-size: 1.1em; line-height: 1.4; font-weight: 500;
+      color: #fff;
+      pointer-events: none;
+      opacity: 0; transition: opacity 0.3s ease;
     }
-    .chat .bubble.on { opacity: 1; transform: none; }
-    .chat .bubble .dim { opacity: 0.7; }
-    .chat .reply {
-      align-self: flex-start; color: var(--fg-3); font-size: 0.88em;
-      opacity: 0; transition: opacity 0.3s ease; padding: 0 0.2em;
+    .subs.on { opacity: 1; }
+    .subs .line {
+      display: inline; padding: 0.15em 0.5em;
+      background: rgba(20, 20, 26, 0.78);
+      border-radius: 0.35em;
+      -webkit-box-decoration-break: clone; box-decoration-break: clone;
     }
-    .chat .reply.on { opacity: 1; }
-    .chat .reply i { display: inline-block; width: 0.45em; height: 0.45em; border-radius: 50%; background: var(--fg-3); margin-right: 0.2em; animation: pulse 1s ease-in-out infinite; }
-    .chat .reply i:nth-child(2) { animation-delay: 0.15s; }
-    .chat .reply i:nth-child(3) { animation-delay: 0.3s; }
-    @keyframes pulse { 50% { opacity: 0.3; } }
-    .chat .composer {
-      margin: 0 1em 1em;
-      border: 1px solid var(--line); border-radius: 10px;
-      background: var(--bg-2);
-      padding: 0.6em 0.8em;
-      min-height: 3.2em; max-height: 11em; overflow: hidden;
-      font-size: 0.85em; line-height: 1.45; color: var(--fg-2);
-      white-space: pre-wrap;
-      transition: border-color 0.2s;
+    .subs .w { opacity: 0; display: inline; transition: opacity 0.14s ease; }
+    .subs .w.on { opacity: 1; }
+    .subs .w.hot { color: var(--mark); }
+
+    /* note card that flies into the menu bar */
+    .card {
+      position: absolute; z-index: 20;
+      width: 15em;
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 0.55em 0.7em;
+      box-shadow: 0 10px 24px rgba(0,0,0,0.18);
+      font-size: 0.82em; line-height: 1.35;
+      pointer-events: none;
+      transform-origin: top right;
+      transition: transform 0.62s cubic-bezier(.5,0,.3,1), opacity 0.55s ease;
     }
-    .chat .composer .ph { color: var(--fg-3); }
-    .chat .composer.flash { border-color: var(--accent); }
-    .chat .composer b { color: var(--fg); font-weight: 600; }
+    .card .cq { color: var(--fg-3); font-size: 0.9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 0.2em; }
+    .card .cn { color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
     @media (prefers-reduced-motion: reduce) {
       .scene * { transition: none !important; animation: none !important; }
     }
-    @media (max-width: 760px) {
-      .desk { grid-template-columns: 1fr; min-height: 0; }
-      .scene { font-size: 12px; }
-      .hero { padding-top: 36px; }
+    @media (max-width: 900px) {
+      .split { grid-template-columns: 1fr; min-height: 0; }
+      .side { padding: 20px 24px; }
+      .hero { padding: 36px 0 28px; }
+      .hero h1 { font-size: 2.4rem; }
+      .side footer { order: 3; padding-top: 16px; }
+      .stage { border-left: 0; border-top: 1px solid var(--line); }
+      .scene { font-size: 9px; height: 38em; min-height: 0; }
+      .win { left: 1em; right: 1em; }
+      .msgs { padding: 1em 0.8em 0.6em; }
+      .user { max-width: 88%; }
     }
-
-    footer {
-      padding: 32px 0 48px;
-      border-top: 1px solid var(--line);
-      font-size: 0.9rem; color: var(--fg-3);
-      display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between;
-    }
-    footer a:hover { color: var(--fg); }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <nav>
-      <a class="brand" href="/">
-        <img src="/icon.svg" alt="">
-        Sendpoint
-      </a>
-      <div class="links">
-        <a href="https://github.com/saiashirwad/sendpoint">GitHub</a>
+  <main class="split">
+    <aside class="side">
+      <a class="brand" href="/"><img src="/icon.svg" alt="">Sendpoint</a>
+      <div class="hero">
+        <h1>Think out loud while you read.</h1>
+        <p class="lede">Select a passage, say what you're thinking, keep going. Send the whole train of thought as one prompt.</p>
+        <div class="actions">
+          <a class="btn primary" href="/download">Download for Mac</a>
+          <a class="btn" href="https://github.com/saiashirwad/clipboard-annotator">GitHub</a>
+        </div>
+        <p class="fine">macOS 14 or later, Apple Silicon. Free.</p>
       </div>
-    </nav>
-  </div>
+      <footer>
+        <span>Everything stays on your Mac.</span>
+        <a href="https://github.com/saiashirwad/clipboard-annotator/releases">Releases</a>
+      </footer>
+    </aside>
 
-  <header class="hero">
-    <div class="wrap">
-      <h1>Think out loud<br>while you read.</h1>
-      <p class="lede">Select a passage, say what you're thinking, keep going. Send the whole train of thought as one prompt.</p>
-      <div class="actions">
-        <a class="btn primary" href="/download">Download for Mac</a>
-        <a class="btn" href="https://github.com/saiashirwad/sendpoint">View on GitHub</a>
-      </div>
-      <p class="fine">macOS 14 or later, Apple Silicon. Free.</p>
-    </div>
-  </header>
-
-  <div class="scene-wrap">
-    <div class="wrap">
+    <section class="stage">
       <div class="scene" id="scene" aria-hidden="true">
         <div class="menubar">
-          <div class="item"><img src="/icon.svg" alt=""><span class="badge" id="badge">0</span></div>
+          <div class="item" id="mbitem">
+            <svg viewBox="0 0 1024 1024" width="18" height="18" aria-hidden="true"><rect x="100" y="100" width="824" height="824" rx="186" fill="#4b4be0"/><path fill="#fff" d="M296 262H728A84 84 0 0 1 812 346V598A84 84 0 0 1 728 682H420L318 778L336 682H296A84 84 0 0 1 212 598V346A84 84 0 0 1 296 262Z"/><rect x="292" y="356" width="440" height="42" rx="21" fill="#C9CBDD"/><rect x="280" y="437" width="372" height="70" rx="20" fill="#FFD84D"/><rect x="292" y="451" width="348" height="42" rx="21" fill="#2B2A5A"/><rect x="292" y="546" width="380" height="42" rx="21" fill="#C9CBDD"/></svg>
+            <span class="badge" id="badge">0</span>
+          </div>
           <div class="item">Wed 2:14 PM</div>
         </div>
-        <div class="desk">
-          <div class="win">
-            <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="title">CEK machines</span></div>
-            <div class="reader">
-              <p class="h">How a CEK machine handles closures</p>
-              <p><span class="sel" id="s1">Because the closure captures the environment at definition time, a CEK machine never substitutes. It extends the environment instead.</span></p>
-              <p><span class="sel" id="s2">The continuation is a separate stack of frames. Each frame records what to do with the value once it arrives.</span></p>
-              <p>Lookups walk the environment chain until they find the binding. In practice, the chain stays short because most closures are created in shallow scopes.</p>
-            </div>
-            <div class="panel" id="panel">
-              <div class="q" id="pq"></div>
-              <div class="n" id="pn"><span class="ph">Hold to talk…</span></div>
-              <div class="foot"><span class="mic" id="mic"><span class="dot"></span><span class="bars"><i></i><i></i><i></i><i></i><i></i></span><span id="micl">Ready</span></span><span id="pstat"></span></div>
+
+        <div class="win" id="doc">
+          <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">chatgpt.com</span><span class="sp"></span></div>
+          <div class="msgs" id="msgs">
+            <div class="col" id="col">
+              <div class="user">how does a CEK machine handle closures?</div>
+              <div class="assistant">
+                <p class="h">Closures in a CEK machine</p>
+                <p><span class="sel" id="s1">Because the closure captures the environment at definition time, a CEK machine never substitutes. It extends the environment instead.</span></p>
+                <p><span class="sel" id="s2">The continuation is a separate stack of frames. Each frame records what to do with the value once it arrives.</span></p>
+                <p>Lookups walk the environment chain until they find the binding. In practice the chain stays short, because most closures are created in shallow scopes and are dropped as soon as their frame returns.</p>
+              </div>
             </div>
           </div>
-          <div class="win chat">
-            <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="title">Chat</span></div>
-            <div class="msgs">
-              <div class="bubble" id="bubble"></div>
-              <div class="reply" id="reply"><i></i><i></i><i></i></div>
+          <div class="composer-wrap">
+            <div class="composer" id="composer">
+              <span class="plus">+</span>
+              <div class="text" id="ctext"><span class="ph">Ask anything</span></div>
+              <span class="send">↑</span>
             </div>
-            <div class="composer" id="composer"><span class="ph">Message…</span></div>
           </div>
         </div>
-      </div>
-    </div>
-  </div>
 
-  <div class="wrap">
-    <footer>
-      <span>Sendpoint. Everything stays on your Mac.</span>
-      <span><a href="https://github.com/saiashirwad/sendpoint">Source on GitHub</a> · <a href="https://github.com/saiashirwad/sendpoint/releases">Releases</a></span>
-    </footer>
-  </div>
+        <div class="subs" id="subs"><span class="line" id="subline"></span></div>
+
+        <div class="capsule" id="capsule">
+          <div class="ind"><span class="halo"></span><span class="dot"></span><span class="arc"></span></div>
+          <canvas id="wave"></canvas>
+          <div class="txt"><span class="t" id="ct">Listening</span><span class="s" id="cs">Release to save</span></div>
+        </div>
+      </div>
+    </section>
+  </main>
 
   <script>
   (() => {
@@ -333,109 +367,221 @@
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+    const scene = $("scene"), badge = $("badge"), mbitem = $("mbitem"),
+          msgs = $("msgs"), col = $("col"),
+          subs = $("subs"), subline = $("subline"),
+          capsule = $("capsule"), ct = $("ct"), cs = $("cs"), wave = $("wave"),
+          composer = $("composer"), ctext = $("ctext");
+    const PH = '<span class="ph">Ask anything</span>';
+    let added = [];
+
     const notes = [
-      { sel: "s1", words: "wait, doesn't the environment grow forever then? when does anything get pruned" },
-      { sel: "s2", words: "so is the continuation the stack, or is the environment the stack? I keep mixing these up" },
+      { sel: "s1", said: "wait, doesn't the environment grow forever then? when does anything get pruned" },
+      { sel: "s2", said: "so is the continuation the stack, or is the environment the stack? I keep mixing these up" },
+      { sel: null, said: "actually I think I get it. environment is data, continuation is control" },
     ];
+    const replyWords = "Good instinct on both. The environment doesn't grow forever: a closure only keeps the frames it was created inside, and a frame is dropped as soon as nothing references it. And your last note is exactly right, which is why the two feel like the same thing. The environment answers \"what does x mean here\", the continuation answers \"what happens next\".".split(" ");
 
-    const badge = $("badge"), panel = $("panel"), pq = $("pq"), pn = $("pn"),
-          mic = $("mic"), micl = $("micl"), pstat = $("pstat"),
-          composer = $("composer"), bubble = $("bubble"), reply = $("reply");
+    /* ---------- waveform (same shapes as the app: live bars, travelling wave) ---------- */
+    const wctx = wave.getContext("2d");
+    let mode = "idle";          // idle | live | busy
+    let energy = 0;             // target loudness while speaking
+    const samples = new Array(48).fill(0);
+    let lastPush = 0;
+    const draw = (now) => {
+      const dpr = devicePixelRatio || 1;
+      const w = wave.clientWidth, h = wave.clientHeight;
+      if (wave.width !== w * dpr || wave.height !== h * dpr) { wave.width = w * dpr; wave.height = h * dpr; }
+      wctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      wctx.clearRect(0, 0, w, h);
+      const unit = h / 26;               // app draws in a 26pt-high strip
+      const bw = 3 * unit, gap = 2.5 * unit;
+      const count = Math.floor((w + gap) / (bw + gap));
+      const t = now / 1000;
 
+      if (mode === "live" && now - lastPush > 33) {
+        lastPush = now;
+        energy *= 0.86;
+        const level = Math.max(0.04, Math.min(1, energy * (0.7 + Math.random() * 0.5) + 0.03 * Math.random()));
+        samples.shift(); samples.push(level);
+      }
+
+      for (let i = 0; i < count; i++) {
+        let f, alpha;
+        if (mode === "live") {
+          const s = samples[samples.length - count + i] ?? 0;
+          f = 0.12 + 0.88 * Math.pow(s, 1.15); alpha = 0.45 + 0.55 * f;
+        } else if (mode === "busy") {
+          const center = (count - 1) / 2, spread = count * 0.32;
+          const wv = (1 + Math.sin(t * 5.5 - i * 0.42)) / 2;
+          const d = (i - center) / spread;
+          f = 0.12 + 0.7 * wv * Math.exp(-(d * d)); alpha = 0.35 + 0.6 * f;
+        } else {
+          f = 0.12 + 0.05 * (1 + Math.sin(t * 2.4 + i * 0.45)) / 2; alpha = 0.35;
+        }
+        const bh = Math.max(3 * unit, h * f);
+        const x = i * (bw + gap), y = (h - bh) / 2;
+        wctx.fillStyle = `rgba(255,255,255,${alpha.toFixed(3)})`;
+        wctx.beginPath();
+        wctx.roundRect(x, y, bw, bh, bw / 2);
+        wctx.fill();
+      }
+      requestAnimationFrame(draw);
+    };
+    if (!reduced) requestAnimationFrame(draw);
+
+    /* ---------- helpers ---------- */
     const setBadge = (n) => {
       badge.textContent = n;
       badge.classList.toggle("on", n > 0);
       if (n > 0) { badge.classList.remove("bump"); void badge.offsetWidth; badge.classList.add("bump"); }
     };
+    const capsuleState = (m, title, sub) => {
+      mode = m;
+      capsule.classList.toggle("busy", m === "busy");
+      ct.textContent = title; cs.textContent = sub;
+    };
 
-    const reset = () => {
-      for (const id of ["s1", "s2"]) $(id).classList.remove("on");
-      panel.className = "panel";
-      pq.textContent = "";
-      pn.innerHTML = '<span class="ph">Hold to talk…</span>';
-      mic.className = "mic"; micl.textContent = "Ready"; pstat.textContent = "";
-      composer.innerHTML = '<span class="ph">Message…</span>';
-      composer.classList.remove("flash");
-      bubble.className = "bubble"; bubble.textContent = "";
-      reply.className = "reply";
-      setBadge(0);
+    const speak = async (text) => {
+      subline.innerHTML = "";
+      subs.classList.add("on");
+      const words = text.split(" ");
+      let prev = null;
+      for (const w of words) {
+        const span = document.createElement("span");
+        span.className = "w hot";
+        span.textContent = (subline.childElementCount ? " " : "") + w;
+        subline.appendChild(span);
+        void span.offsetWidth;
+        span.classList.add("on");
+        if (prev) prev.classList.remove("hot");
+        prev = span;
+        energy = 0.55 + Math.random() * 0.45;
+        const beat = /[,.?]$/.test(w) ? 340 : 120 + w.length * 22 + Math.random() * 60;
+        await sleep(beat);
+      }
+      if (prev) prev.classList.remove("hot");
+    };
+
+    const flyCard = async (quote, note) => {
+      const card = document.createElement("div");
+      card.className = "card";
+      card.innerHTML = (quote ? `<div class="cq">“${quote}”</div>` : "") + `<div class="cn">${note}</div>`;
+      scene.appendChild(card);
+      const sr = scene.getBoundingClientRect();
+      const cr = capsule.getBoundingClientRect();
+      const br = mbitem.getBoundingClientRect();
+      const startX = cr.left + cr.width / 2 - sr.left, startY = cr.top - sr.top;
+      card.style.left = "0px"; card.style.top = "0px";
+      const cw = card.offsetWidth;
+      card.style.transform = `translate(${startX - cw / 2}px, ${startY - card.offsetHeight - 8}px)`;
+      card.style.opacity = "1";
+      void card.offsetWidth;
+      await sleep(30);
+      const endX = br.left + br.width / 2 - sr.left, endY = br.top + br.height / 2 - sr.top;
+      card.style.transform = `translate(${endX - cw}px, ${endY}px) scale(0.08)`;
+      card.style.opacity = "0";
+      await sleep(620);
+      card.remove();
     };
 
     const capture = async (note, count) => {
-      const sel = $(note.sel);
-      sel.classList.add("on");
-      await sleep(800);
+      const sel = note.sel ? $(note.sel) : null;
+      if (sel) { sel.classList.add("on"); await sleep(750); }
 
-      pq.textContent = sel.textContent;
-      pn.innerHTML = '<span class="ph">Hold to talk…</span>';
-      panel.className = "panel on";
-      await sleep(700);
+      capsuleState("live", "Listening", "Release to save");
+      capsule.classList.add("on");
+      await sleep(450);
 
-      mic.classList.add("rec"); micl.textContent = "Listening";
-      pn.innerHTML = "";
+      await speak(note.said);
+      await sleep(250);
+
+      capsuleState("busy", "Transcribing", "Saving to your stack");
       await sleep(350);
+      subs.classList.remove("on");
+      await sleep(650);
 
-      const words = note.words.split(" ");
-      for (const w of words) {
-        const span = document.createElement("span");
-        span.className = "w";
-        span.textContent = w + " ";
-        pn.appendChild(span);
-        void span.offsetWidth;
-        span.classList.add("on");
-        await sleep(110 + Math.random() * 90);
-      }
-      await sleep(350);
-
-      mic.classList.remove("rec"); micl.textContent = "Saved";
-      pstat.textContent = "";
-      await sleep(500);
-
-      panel.className = "panel out";
-      await sleep(120);
+      capsule.classList.remove("on");
+      const fly = flyCard(sel ? sel.textContent : null, note.said);
+      await sleep(380);
       setBadge(count);
-      sel.classList.remove("on");
-      await sleep(600);
+      if (sel) sel.classList.remove("on");
+      await fly;
+      await sleep(500);
     };
 
-    const send = () => {
-      const body = notes.map((n, i) =>
-        `<b>## ${i + 1}</b>\n> ${$(n.sel).textContent}\n\n${n.words}`
-      ).join("\n\n");
-      composer.innerHTML = `These are my reading notes, captured in order while I read. Give me one coherent response that takes all of them into account.\n\n${body}`;
+    const promptHTML = () => {
+      const entries = notes.map((n, i) => {
+        const q = n.sel ? `\n> ${$(n.sel).textContent}\n` : "\n";
+        return `<b>## ${i + 1}</b>${q}\n${n.said}`;
+      }).join("\n\n");
+      return `These are my reading notes, captured in order while I read. Give me one coherent response that takes all of them into account.\n\n${entries}`;
+    };
+
+    const reset = () => {
+      for (const id of ["s1", "s2"]) $(id).classList.remove("on");
+      capsule.classList.remove("on"); capsuleState("idle", "Listening", "Release to save");
+      subs.classList.remove("on"); subline.innerHTML = "";
+      ctext.innerHTML = PH; composer.classList.remove("flash");
+      for (const el of added) el.remove();
+      added = [];
+      msgs.scrollTop = 0;
+      setBadge(0);
+    };
+
+    const scrollDown = () => msgs.scrollTo({ top: msgs.scrollHeight, behavior: "smooth" });
+
+    const sendAndReply = async () => {
+      ctext.innerHTML = promptHTML();
       composer.classList.add("flash");
+      await sleep(1600);
+
+      composer.classList.remove("flash");
+      ctext.innerHTML = PH;
+      const u = document.createElement("div");
+      u.className = "user pending";
+      u.innerHTML = `These are my reading notes, captured in order while I read…\n\n` +
+        notes.map((n, i) => `<span class="dim">${i + 1} · </span>${n.said}`).join("\n");
+      col.appendChild(u); added.push(u);
+      void u.offsetWidth; u.classList.add("on");
+      setBadge(0);
+      scrollDown();
+      await sleep(700);
+
+      const a = document.createElement("div");
+      a.className = "assistant";
+      a.innerHTML = '<span class="typing"><i></i><i></i><i></i></span>';
+      col.appendChild(a); added.push(a);
+      scrollDown();
+      await sleep(1100);
+      a.innerHTML = "";
+      for (const w of replyWords) {
+        const span = document.createElement("span");
+        span.className = "w"; span.textContent = w + " ";
+        a.appendChild(span);
+        void span.offsetWidth; span.classList.add("on");
+        if (a.children.length % 6 === 0) scrollDown();
+        await sleep(38 + Math.random() * 40);
+      }
+      scrollDown();
+      await sleep(3200);
     };
 
     const run = async () => {
       if (reduced) {
         setBadge(notes.length);
-        bubble.textContent = "These are my reading notes, captured in order while I read…";
-        bubble.classList.add("on");
+        ctext.innerHTML = promptHTML();
         return;
       }
       for (;;) {
         reset();
-        await sleep(900);
+        await sleep(1000);
         let count = 0;
-        for (const note of notes) {
-          count += 1;
-          await capture(note, count);
-        }
-        await sleep(400);
-        send();
-        await sleep(1400);
-
-        composer.classList.remove("flash");
-        composer.innerHTML = '<span class="ph">Message…</span>';
-        bubble.innerHTML = `These are my reading notes, captured in order while I read. Give me one coherent response…\n\n<span class="dim">## 1 · </span>${notes[0].words}\n<span class="dim">## 2 · </span>${notes[1].words}`;
-        bubble.classList.add("on");
-        setBadge(0);
-        await sleep(700);
-        reply.classList.add("on");
-        await sleep(2600);
+        for (const note of notes) await capture(note, ++count);
+        await sleep(500);
+        await sendAndReply();
       }
     };
-
     run();
   })();
   </script>
