@@ -43,7 +43,7 @@ struct VoiceCaptureView: View {
     @ViewBuilder
     private var indicator: some View {
         switch model.phase {
-        case .recording:
+        case .recording, .selecting, .starting:
             PulsingDot(color: .red)
         case .transcribing:
             SpinningArc()
@@ -52,8 +52,6 @@ struct VoiceCaptureView: View {
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.orange)
                 .frame(width: 18, height: 18)
-        case .selecting, .starting:
-            PulsingDot(color: .white.opacity(0.7))
         case .dismissed:
             Color.clear.frame(width: 18, height: 18)
         }
@@ -61,9 +59,11 @@ struct VoiceCaptureView: View {
 
     // MARK: - Copy
 
+    // Reading the selection happens while the microphone is already open, so
+    // the overlay never mentions it: from the user's side it is all listening.
     private var waveformMode: Waveform.Mode {
         switch model.phase {
-        case .recording: .live
+        case .recording, .selecting(_, recordingStarted: true): .live
         case .transcribing: .busy
         case .failed: .flat
         case .selecting, .starting, .dismissed: .idle
@@ -72,9 +72,7 @@ struct VoiceCaptureView: View {
 
     private var title: String {
         switch model.phase {
-        case .selecting: "Reading selection"
-        case .starting: "Starting microphone"
-        case .recording: "Listening"
+        case .selecting, .starting, .recording: "Listening"
         case .transcribing(.preparingModel): "Preparing voice model"
         case .transcribing(.transcribing): "Transcribing"
         case let .failed(message, _): message
@@ -84,8 +82,7 @@ struct VoiceCaptureView: View {
 
     private var subtitle: String? {
         switch model.phase {
-        case .selecting, .starting: "Keep holding the shortcut"
-        case .recording: "Release to save"
+        case .selecting, .starting, .recording: "Release to save"
         case .transcribing(.preparingModel): "First time only"
         case .transcribing(.transcribing): "Saving to your stack"
         case .failed, .dismissed: nil

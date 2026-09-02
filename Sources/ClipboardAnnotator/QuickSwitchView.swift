@@ -508,6 +508,8 @@ final class QuickSwitchWindowController: NSObject, NSWindowDelegate {
         hosting.sizingOptions = [.intrinsicContentSize]
         panel.contentView = hosting
         panel.setContentSize(hosting.fittingSize)
+        // From here on only fit(height:) resizes the panel.
+        hosting.sizingOptions = []
         panel.delegate = self
         installKeyMonitor()
     }

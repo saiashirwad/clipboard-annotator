@@ -126,6 +126,9 @@ final class CaptureController {
         voiceModel = model
         previousApp = NSWorkspace.shared.frontmostApplication
 
+        // Show the overlay at once; the user is already talking.
+        showVoiceOverlay(model)
+
         var recordingStartError: Error?
         if VoiceAnnotationService.shared.isMicrophoneAuthorized {
             let identity = model.identity
@@ -143,7 +146,7 @@ final class CaptureController {
             }
         }
 
-        let captured = SelectionCapture.capture()
+        let captured = SelectionCapture.capture(fallback: .brief)
         guard voiceModel === model, model.phase != .dismissed else {
             VoiceAnnotationService.shared.discardRecording()
             return
@@ -153,7 +156,7 @@ final class CaptureController {
         if let target = model.target {
             provenanceWork.start(for: target)
         }
-        presentVoice(model)
+        focusVoiceOverlay()
         let selectionAction = model.selectionCompleted()
 
         if let recordingStartError {
@@ -221,8 +224,9 @@ final class CaptureController {
         panel.makeKeyAndOrderFront(nil)
     }
 
-    private func presentVoice(_ model: VoiceCaptureModel) {
-        guard let captured = model.captured else { return }
+    /// Puts the overlay on screen without activating the app, so the front
+    /// app keeps focus while its selection is still being read.
+    private func showVoiceOverlay(_ model: VoiceCaptureModel) {
         let panel = CapturePanel(
             contentRect: NSRect(x: 0, y: 0, width: 380, height: 110),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -247,10 +251,17 @@ final class CaptureController {
         ))
         panel.contentView = hosting
         panel.setContentSize(hosting.fittingSize)
-        positionVoiceOverlay(panel, for: captured)
+        positionVoiceOverlay(panel)
         voicePanel = panel
         installVoiceKeyMonitor()
+        panel.orderFrontRegardless()
+    }
 
+    /// Once the selection is read, take focus so Escape reaches the overlay.
+    private func focusVoiceOverlay() {
+        guard let panel = voicePanel else { return }
+        // Synchronous: auxiliary windows must be out of the way before we
+        // activate, or activating drags them forward with the panel.
         NotificationCenter.default.post(name: .captureWillPresent, object: nil)
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
@@ -283,10 +294,8 @@ final class CaptureController {
         panel.setFrameOrigin(origin)
     }
 
-    private func positionVoiceOverlay(_ panel: NSPanel, for captured: CapturedSelection) {
-        let screen = captured.screenRect.flatMap(screenContaining(quartzRect:))
-            ?? screenContaining(point: NSEvent.mouseLocation)
-            ?? NSScreen.main
+    private func positionVoiceOverlay(_ panel: NSPanel) {
+        let screen = screenContaining(point: NSEvent.mouseLocation) ?? NSScreen.main
         guard let visible = screen?.visibleFrame else { return }
 
         // The overlay view carries its own shadow padding, so sit a little

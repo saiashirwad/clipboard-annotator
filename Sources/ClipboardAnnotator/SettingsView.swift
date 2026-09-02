@@ -61,18 +61,30 @@ struct SettingsView: View {
         VStack(spacing: 0) {
             SettingsTabBar(selection: $tab)
             Divider()
-            Group {
-                switch tab {
-                case .profiles: profilesTab
-                case .shortcuts: shortcutsTab
-                case .capture: captureTab
-                case .permissions: permissionsTab
+            ZStack(alignment: .top) {
+                Group {
+                    switch tab {
+                    case .profiles: profilesTab
+                    case .shortcuts: shortcutsTab
+                    case .capture: captureTab
+                    case .permissions: permissionsTab
+                    }
                 }
+                .padding(24)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .id(tab)
+                .transition(.opacity)
             }
-            .padding(24)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .animation(.easeOut(duration: 0.18), value: tab)
         }
         .frame(width: Self.width)
+        // Report the content's own height; the window follows it.
+        .background(GeometryReader { proxy in
+            Color.clear.preference(key: HeightKey.self, value: proxy.size.height)
+        })
+        // While the window animates between tab heights, keep the content
+        // pinned to the top so it reveals from the bottom instead of sliding.
+        .frame(maxHeight: .infinity, alignment: .top)
         .background(Color(nsColor: .windowBackgroundColor))
         .ignoresSafeArea()
         .overlayScrollers()

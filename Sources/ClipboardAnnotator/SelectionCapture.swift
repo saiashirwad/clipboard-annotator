@@ -18,7 +18,20 @@ struct CapturedSelection {
 ///  2. Synthesise ⌘C, read the pasteboard, then put the old pasteboard back.
 enum SelectionCapture {
 
-    static func capture() -> CapturedSelection {
+    /// How far to go when Accessibility reports no selection.
+    enum FallbackPolicy {
+        /// Typed capture: the user has let go of the shortcut, so wait for the
+        /// modifiers and give the app time to copy.
+        case patient
+        /// Hold-to-talk: the modifiers stay down by design, and no selection
+        /// usually means a free-standing thought, so only glance at the clipboard.
+        case brief
+
+        var waitsForModifierRelease: Bool { self == .patient }
+        var clipboardTimeout: TimeInterval { self == .patient ? 0.7 : 0.15 }
+    }
+
+    static func capture(fallback: FallbackPolicy = .patient) -> CapturedSelection {
         let app = NSWorkspace.shared.frontmostApplication
         var rect: CGRect?
         var text = ""
@@ -28,7 +41,10 @@ enum SelectionCapture {
             rect = axRect
         }
         if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            text = copyViaKeystroke(processIdentifier: app?.processIdentifier ?? 0) ?? ""
+            text = copyViaKeystroke(
+                processIdentifier: app?.processIdentifier ?? 0,
+                fallback: fallback
+            ) ?? ""
         }
 
         return CapturedSelection(
@@ -82,12 +98,15 @@ enum SelectionCapture {
 
     // MARK: - Clipboard fallback
 
-    private static func copyViaKeystroke(processIdentifier: pid_t) -> String? {
+    private static func copyViaKeystroke(
+        processIdentifier: pid_t,
+        fallback: FallbackPolicy
+    ) -> String? {
         let pasteboard = NSPasteboard.general
         let saved = snapshot(pasteboard)
         let changeCountBeforeCopy = pasteboard.changeCount
 
-        waitForModifierRelease()
+        if fallback.waitsForModifierRelease { waitForModifierRelease() }
         postCommandKey(
             8,
             processIdentifier: processIdentifier > 0 ? processIdentifier : nil
@@ -95,7 +114,7 @@ enum SelectionCapture {
 
         var copiedChangeCount: Int?
         var result: String?
-        let deadline = Date().addingTimeInterval(0.7)
+        let deadline = Date().addingTimeInterval(fallback.clipboardTimeout)
         while Date() < deadline {
             if pasteboard.changeCount != changeCountBeforeCopy {
                 copiedChangeCount = pasteboard.changeCount

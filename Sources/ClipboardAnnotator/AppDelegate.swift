@@ -789,9 +789,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         // Each tab has its own natural height; follow it with the top edge still.
         let hosting = NSHostingView(rootView: settingsView
-            .background(GeometryReader { proxy in
-                Color.clear.preference(key: HeightKey.self, value: proxy.size.height)
-            })
             .onPreferenceChange(HeightKey.self) { [weak self] height in
                 self?.fitSettingsWindow(toContentHeight: height)
             })
@@ -800,6 +797,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hosting.safeAreaRegions = []
         window.contentView = hosting
         window.setContentSize(hosting.fittingSize)
+        // From here on only fitSettingsWindow resizes the window. Left on,
+        // the intrinsic size would snap the window taller before the animation.
+        hosting.sizingOptions = []
         window.delegate = self
         settingsWindow = window
         NSApp.activate(ignoringOtherApps: true)
@@ -824,6 +824,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.18
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             window.animator().setFrame(target, display: true)
         }
     }
