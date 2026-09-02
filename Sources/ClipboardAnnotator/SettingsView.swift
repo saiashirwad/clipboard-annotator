@@ -47,6 +47,12 @@ struct SettingsView: View {
     let onRunSetup: () -> Void
 
     @State private var tab: SettingsTab = .profiles
+    @State private var newProfile: NewProfileDraft?
+
+    private struct NewProfileDraft: Equatable {
+        var name: String
+        var problem: String?
+    }
 
     static let size = CGSize(width: 780, height: 620)
     private static let sidebarWidth: CGFloat = 200
@@ -125,7 +131,7 @@ struct SettingsView: View {
                     }
                 }
                 Button {
-                    _ = ProfileDialogs.saveAsNew(profileEditor)
+                    newProfile = NewProfileDraft(name: "\(profileEditor.draft.name) Copy")
                 } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 11, weight: .semibold))
@@ -137,6 +143,22 @@ struct SettingsView: View {
                 .foregroundStyle(.secondary)
                 .help("New profile from this draft…")
                 .accessibilityLabel("New profile")
+                .popover(
+                    isPresented: Binding(
+                        get: { newProfile != nil },
+                        set: { if !$0 { newProfile = nil } }
+                    ),
+                    arrowEdge: .bottom
+                ) {
+                    NewProfilePopover(
+                        name: Binding(
+                            get: { newProfile?.name ?? "" },
+                            set: { newProfile?.name = $0; newProfile?.problem = nil }
+                        ),
+                        problem: newProfile?.problem,
+                        onCommit: createProfile
+                    )
+                }
             }
             Text("The selected profile is active and shapes what Copy produces.")
                 .font(.caption)
@@ -395,6 +417,52 @@ struct SettingsView: View {
     private func deleteProfile() {
         ProfileDialogs.delete(profileEditor)
     }
+
+    private func createProfile() {
+        guard let draft = newProfile else { return }
+        do {
+            let name = try profileEditor.validatedNewProfileName(draft.name)
+            _ = try profileEditor.saveAsNew(named: name)
+            newProfile = nil
+        } catch {
+            newProfile?.problem = error.localizedDescription
+            NSSound.beep()
+        }
+    }
+}
+
+/// A small anchored prompt: type a name, press Return.
+private struct NewProfilePopover: View {
+    @Binding var name: String
+    let problem: String?
+    let onCommit: () -> Void
+
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("New profile from the current draft")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            TextField("Profile name", text: $name)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 13))
+                .focused($focused)
+                .onSubmit(onCommit)
+            if let problem {
+                Text(problem)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            } else {
+                ShortcutHint(keys: "↩", label: "Create")
+            }
+        }
+        .padding(12)
+        .frame(width: 240)
+        .onAppear {
+            DispatchQueue.main.async { focused = true }
+        }
+    }
 }
 
 // MARK: - Building blocks
@@ -635,18 +703,6 @@ enum ProfileDialogs {
         guard editor.isDirty else { return true }
         guard let decision = dirtyDecision(for: editor) else { return false }
         return resolve(decision, editor: editor, closesWindow: true)
-    }
-
-    @discardableResult
-    static func saveAsNew(_ editor: ProfileEditorState) -> Bool {
-        guard let name = requestNewName(for: editor) else { return false }
-        do {
-            _ = try editor.saveAsNew(named: name)
-            return true
-        } catch {
-            showError(error)
-            return false
-        }
     }
 
     static func delete(_ editor: ProfileEditorState) {
