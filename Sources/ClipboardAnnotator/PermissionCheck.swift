@@ -39,11 +39,31 @@ enum PermissionCheck {
     }
 
     static var isMicrophoneAuthorized: Bool {
-        AVCaptureDevice.authorizationStatus(for: .audio) == .authorized
+        microphonePermissionState == .granted
+    }
+
+    static var microphonePermissionState: MicrophonePermissionState {
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized:
+            return .granted
+        case .notDetermined:
+            return .notDetermined
+        case .denied:
+            return .denied
+        case .restricted:
+            return .restricted
+        @unknown default:
+            return .denied
+        }
     }
 
     static func openMicrophoneSettings() {
         let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!
+        NSWorkspace.shared.open(url)
+    }
+
+    static func openHeliumAutomationSettings() {
+        let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation")!
         NSWorkspace.shared.open(url)
     }
 }

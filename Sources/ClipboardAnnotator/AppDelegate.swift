@@ -26,11 +26,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let settings: AppSettings
     private let captureController: CaptureController
+    private let permissionState: PermissionState
 
     override init() {
         let settings = AppSettings.shared
         self.settings = settings
         self.captureController = CaptureController(settings: settings)
+        self.permissionState = PermissionState()
         super.init()
     }
 
@@ -41,6 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings.onHotKeysChanged = { [weak self] in self?.registerHotKeys() }
         settings.onProfilesChanged = { [weak self] in self?.refreshStatusItem() }
         registerHotKeys()
+        permissionState.refresh()
 
         bootstrapStore()
 
@@ -113,6 +116,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func applicationDidBecomeActive(_ notification: Notification) {
+        permissionState.refresh()
+    }
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let profileEditor else { return .terminateNow }
         return ProfileDialogs.shouldClose(profileEditor) ? .terminateNow : .terminateCancel
@@ -127,6 +134,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pasteTask = nil
         tearDownQuickSwitcher()
         captureController.teardown()
+        permissionState.teardown()
         store?.teardown()
         if let captureObserver {
             NotificationCenter.default.removeObserver(captureObserver)
