@@ -57,7 +57,7 @@ struct SettingsView: View {
             } header: {
                 Text("Permissions and voice model")
             } footer: {
-                Text("Accessibility is required for capture. Voice and Helium provenance are optional.")
+                Text("Accessibility is required for capture. Voice annotations are optional.")
             }
 
             Section("App") {

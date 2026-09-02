@@ -38,11 +38,7 @@ final class PermissionStateTests: XCTestCase {
         microphone: MicrophonePermissionState = .granted,
         requestMicrophone: Bool = true,
         modelReady: Bool = true,
-        downloadModel: @escaping @Sendable () async throws -> Void = {},
-        heliumInstalled: Bool = false,
-        helium: HeliumAutomationPermissionState = .notInstalled,
-        requestHelium: Bool = true,
-        heliumStatusCall: (@Sendable () async -> HeliumAutomationPermissionState)? = nil
+        downloadModel: @escaping @Sendable () async throws -> Void = {}
     ) -> PermissionServices {
         PermissionServices(
             accessibilityStatus: { accessibility },
@@ -51,12 +47,8 @@ final class PermissionStateTests: XCTestCase {
             requestMicrophone: { requestMicrophone },
             voiceModelIsReady: { modelReady },
             downloadVoiceModel: downloadModel,
-            heliumIsInstalled: { heliumInstalled },
-            heliumAutomationStatus: heliumStatusCall ?? { helium },
-            requestHeliumAutomation: { requestHelium },
             openAccessibilitySettings: {},
-            openMicrophoneSettings: {},
-            openHeliumAutomationSettings: {}
+            openMicrophoneSettings: {}
         )
     }
 
@@ -82,9 +74,7 @@ final class PermissionStateTests: XCTestCase {
                     let state = PermissionState(services: services(
                         accessibility: accessibility,
                         microphone: microphone,
-                        modelReady: modelReady,
-                        heliumInstalled: true,
-                        helium: .denied
+                        modelReady: modelReady
                     ))
                     state.refresh()
                     await state.waitForIdle()
@@ -107,9 +97,7 @@ final class PermissionStateTests: XCTestCase {
         let state = PermissionState(services: services(
             accessibility: .notGranted,
             microphone: .restricted,
-            modelReady: false,
-            heliumInstalled: true,
-            helium: .notDetermined
+            modelReady: false
         ))
 
         state.refresh()
@@ -119,8 +107,6 @@ final class PermissionStateTests: XCTestCase {
         XCTAssertEqual(state.accessibility, .notGranted)
         XCTAssertEqual(state.microphone, .restricted)
         XCTAssertEqual(state.localVoiceModel, .notDownloaded)
-        XCTAssertTrue(state.heliumInstalled)
-        XCTAssertEqual(state.heliumAutomation, .notDetermined)
     }
 
     func testOverlappingRefreshRejectsOlderResultEvenWhenItIgnoresCancellation() async {
@@ -182,6 +168,17 @@ final class PermissionStateTests: XCTestCase {
         XCTAssertEqual(denied.microphone, .denied)
     }
 
+    func testLocalVoiceModelReadinessIncludesFilesPersistedAcrossLaunch() async {
+        let downloaded = LocalVoiceTranscriber(modelsAreDownloaded: { true })
+        let absent = LocalVoiceTranscriber(modelsAreDownloaded: { false })
+
+        let downloadedIsReady = await downloaded.isReady()
+        let absentIsReady = await absent.isReady()
+
+        XCTAssertTrue(downloadedIsReady)
+        XCTAssertFalse(absentIsReady)
+    }
+
     func testModelDownloadFailureCanRetryAndSucceed() async {
         let attempts = Counter()
         let state = PermissionState(services: services(
@@ -204,65 +201,6 @@ final class PermissionStateTests: XCTestCase {
         XCTAssertEqual(state.localVoiceModel, .ready)
         let attemptCount = await attempts.value
         XCTAssertEqual(attemptCount, 2)
-    }
-
-    func testHeliumAbsentSkipsAutomationAndNeverBlocksReadiness() async {
-        let statusCalls = Counter()
-        let absent = PermissionState(services: services(
-            heliumInstalled: false,
-            heliumStatusCall: {
-                await statusCalls.increment()
-                return .granted
-            }
-        ))
-
-        absent.refresh()
-        await absent.waitForIdle()
-        XCTAssertFalse(absent.heliumInstalled)
-        XCTAssertEqual(absent.heliumAutomation, .notInstalled)
-        let statusCallCount = await statusCalls.value
-        XCTAssertEqual(statusCallCount, 0)
-        XCTAssertTrue(absent.isTextCaptureReady)
-        XCTAssertTrue(absent.isVoiceReady)
-
-        absent.requestHeliumAutomation()
-        await absent.waitForIdle()
-        XCTAssertEqual(absent.heliumAutomation, .notInstalled)
-
-        let denied = PermissionState(services: services(
-            heliumInstalled: true,
-            helium: .denied
-        ))
-        denied.refresh()
-        await denied.waitForIdle()
-        XCTAssertEqual(denied.heliumAutomation, .denied)
-        XCTAssertTrue(denied.isTextCaptureReady)
-        XCTAssertTrue(denied.isVoiceReady)
-    }
-
-    func testHeliumRequestPublishesSuccessAndDenial() async {
-        let granted = PermissionState(services: services(
-            heliumInstalled: true,
-            helium: .notDetermined,
-            requestHelium: true
-        ))
-        granted.refresh()
-        await granted.waitForIdle()
-        granted.requestHeliumAutomation()
-        await granted.waitForIdle()
-        XCTAssertEqual(granted.heliumAutomation, .granted)
-
-        let denied = PermissionState(services: services(
-            heliumInstalled: true,
-            helium: .notDetermined,
-            requestHelium: false
-        ))
-        denied.refresh()
-        await denied.waitForIdle()
-        denied.requestHeliumAutomation()
-        await denied.waitForIdle()
-        XCTAssertEqual(denied.heliumAutomation, .denied)
-        XCTAssertTrue(denied.isTextCaptureReady)
     }
 
     func testScopedAccessibilityRefreshDoesNotRestartAndIsOwnedByIdleAndTeardown() async {
@@ -311,9 +249,7 @@ final class PermissionStateTests: XCTestCase {
             accessibility: .notGranted,
             requestAccessibility: false,
             microphone: .notDetermined,
-            modelReady: false,
-            heliumInstalled: true,
-            helium: .notDetermined
+            modelReady: false
         ))
 
         state.refresh()
@@ -321,7 +257,6 @@ final class PermissionStateTests: XCTestCase {
         XCTAssertEqual(state.accessibilityAction, .requestAccessibility)
         XCTAssertEqual(state.microphoneAction, .requestMicrophone)
         XCTAssertEqual(state.localVoiceModelAction, .downloadVoiceModel)
-        XCTAssertEqual(state.heliumAutomationAction, .requestHeliumAutomation)
 
         state.requestAccessibility()
         await state.waitForIdle()
@@ -329,16 +264,13 @@ final class PermissionStateTests: XCTestCase {
 
         let blocked = PermissionState(services: services(
             microphone: .restricted,
-            modelReady: true,
-            heliumInstalled: true,
-            helium: .denied
+            modelReady: true
         ))
         blocked.refresh()
         await blocked.waitForIdle()
         XCTAssertNil(blocked.accessibilityAction)
         XCTAssertEqual(blocked.microphoneAction, .openMicrophoneSettings)
         XCTAssertNil(blocked.localVoiceModelAction)
-        XCTAssertEqual(blocked.heliumAutomationAction, .openHeliumAutomationSettings)
     }
 
     func testTeardownIsIdempotentAndRejectsLateRefreshResult() async {
@@ -360,7 +292,6 @@ final class PermissionStateTests: XCTestCase {
         state.requestAccessibility()
         state.requestMicrophone()
         state.downloadModel()
-        state.requestHeliumAutomation()
         await state.waitForIdle()
         XCTAssertEqual(state.accessibility, .checking)
         XCTAssertEqual(state.localVoiceModel, .checking)

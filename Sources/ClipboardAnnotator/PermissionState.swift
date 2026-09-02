@@ -1,4 +1,3 @@
-import AppKit
 import ApplicationServices
 import Foundation
 import Observation
@@ -27,22 +26,12 @@ enum LocalVoiceModelState: Equatable, Sendable {
     case failed
 }
 
-enum HeliumAutomationPermissionState: Equatable, Sendable {
-    case checking
-    case notInstalled
-    case notDetermined
-    case denied
-    case granted
-}
-
 enum PermissionAction: Equatable, Sendable {
     case requestAccessibility
     case showAccessibilityHelper
     case requestMicrophone
     case openMicrophoneSettings
     case downloadVoiceModel
-    case requestHeliumAutomation
-    case openHeliumAutomationSettings
 }
 
 /// A small closure boundary around macOS permission and model APIs.
@@ -54,12 +43,8 @@ struct PermissionServices: Sendable {
     var requestMicrophone: @Sendable () async -> Bool
     var voiceModelIsReady: @Sendable () async -> Bool
     var downloadVoiceModel: @Sendable () async throws -> Void
-    var heliumIsInstalled: @Sendable () async -> Bool
-    var heliumAutomationStatus: @Sendable () async -> HeliumAutomationPermissionState
-    var requestHeliumAutomation: @Sendable () async -> Bool
     var openAccessibilitySettings: @MainActor @Sendable () -> Void
     var openMicrophoneSettings: @MainActor @Sendable () -> Void
-    var openHeliumAutomationSettings: @MainActor @Sendable () -> Void
 
     @MainActor
     static func live() -> PermissionServices {
@@ -83,23 +68,11 @@ struct PermissionServices: Sendable {
             downloadVoiceModel: {
                 try await VoiceAnnotationService.shared.downloadVoiceModel()
             },
-            heliumIsInstalled: {
-                await checks.heliumIsInstalled()
-            },
-            heliumAutomationStatus: {
-                await checks.heliumAutomationStatus()
-            },
-            requestHeliumAutomation: {
-                await checks.requestHeliumAutomation()
-            },
             openAccessibilitySettings: {
                 PermissionCheck.openAccessibilitySettings()
             },
             openMicrophoneSettings: {
                 PermissionCheck.openMicrophoneSettings()
-            },
-            openHeliumAutomationSettings: {
-                PermissionCheck.openHeliumAutomationSettings()
             }
         )
     }
@@ -120,8 +93,6 @@ final class PermissionState {
     private(set) var accessibility: AccessibilityPermissionState = .checking
     private(set) var microphone: MicrophonePermissionState = .checking
     private(set) var localVoiceModel: LocalVoiceModelState = .checking
-    private(set) var heliumAutomation: HeliumAutomationPermissionState = .checking
-    private(set) var heliumInstalled = false
     private(set) var hasRequestedAccessibility = false
 
     var accessibilityAction: PermissionAction? {
@@ -153,18 +124,6 @@ final class PermissionState {
         }
     }
 
-    var heliumAutomationAction: PermissionAction? {
-        guard heliumInstalled else { return nil }
-        switch heliumAutomation {
-        case .checking, .notInstalled, .granted:
-            return nil
-        case .notDetermined:
-            return .requestHeliumAutomation
-        case .denied:
-            return .openHeliumAutomationSettings
-        }
-    }
-
     var isTextCaptureReady: Bool {
         accessibility == .granted
     }
@@ -178,13 +137,11 @@ final class PermissionState {
     @ObservationIgnored private var accessibilityRequestTask: Task<Void, Never>?
     @ObservationIgnored private var microphoneRequestTask: Task<Void, Never>?
     @ObservationIgnored private var modelDownloadTask: Task<Void, Never>?
-    @ObservationIgnored private var heliumRequestTask: Task<Void, Never>?
 
     @ObservationIgnored private var refreshGeneration = 0
     @ObservationIgnored private var accessibilityGeneration = 0
     @ObservationIgnored private var microphoneGeneration = 0
     @ObservationIgnored private var modelGeneration = 0
-    @ObservationIgnored private var heliumGeneration = 0
 
     init(services: PermissionServices) {
         self.services = services
@@ -205,7 +162,6 @@ final class PermissionState {
             && accessibilityRequestTask == nil
         let microphoneID = microphoneGeneration
         let modelID = modelGeneration
-        let heliumID = heliumGeneration
         let services = services
 
         // Keep the last useful values visible while a background refresh runs.
@@ -215,15 +171,7 @@ final class PermissionState {
             async let accessibility = services.accessibilityStatus()
             async let microphone = services.microphoneStatus()
             async let modelIsReady = services.voiceModelIsReady()
-            async let heliumInstalled = services.heliumIsInstalled()
 
-            let installed = await heliumInstalled
-            let helium: HeliumAutomationPermissionState
-            if installed {
-                helium = await services.heliumAutomationStatus()
-            } else {
-                helium = .notInstalled
-            }
             let result = await (accessibility, microphone, modelIsReady)
             guard !Task.isCancelled else { return }
             self?.finishRefresh(
@@ -232,12 +180,9 @@ final class PermissionState {
                 appliesAccessibility: appliesAccessibility,
                 microphoneID: microphoneID,
                 modelID: modelID,
-                heliumID: heliumID,
                 accessibility: result.0,
                 microphone: result.1,
-                modelIsReady: result.2,
-                heliumInstalled: installed,
-                helium: helium
+                modelIsReady: result.2
             )
         }
     }
@@ -324,25 +269,6 @@ final class PermissionState {
         }
     }
 
-    func requestHeliumAutomation() {
-        guard lifecycle == .active,
-              heliumInstalled,
-              heliumAutomation == .notDetermined
-        else { return }
-        heliumRequestTask?.cancel()
-        heliumGeneration += 1
-        let generation = heliumGeneration
-        let services = services
-        heliumAutomation = .checking
-
-        heliumRequestTask = Task { [weak self, services] in
-            guard !Task.isCancelled else { return }
-            let granted = await services.requestHeliumAutomation()
-            guard !Task.isCancelled else { return }
-            self?.finishHeliumRequest(generation: generation, granted: granted)
-        }
-    }
-
     func openAccessibilitySettings() {
         guard lifecycle == .active else { return }
         services.openAccessibilitySettings()
@@ -351,11 +277,6 @@ final class PermissionState {
     func openMicrophoneSettings() {
         guard lifecycle == .active else { return }
         services.openMicrophoneSettings()
-    }
-
-    func openHeliumAutomationSettings() {
-        guard lifecycle == .active else { return }
-        services.openHeliumAutomationSettings()
     }
 
     /// Test and lifecycle support. It waits only for work owned at each pass.
@@ -367,7 +288,6 @@ final class PermissionState {
                 accessibilityRequestTask,
                 microphoneRequestTask,
                 modelDownloadTask,
-                heliumRequestTask,
             ].compactMap { $0 }
             guard !tasks.isEmpty else { return }
             for task in tasks { await task.value }
@@ -382,20 +302,17 @@ final class PermissionState {
         accessibilityGeneration += 1
         microphoneGeneration += 1
         modelGeneration += 1
-        heliumGeneration += 1
 
         refreshTask?.cancel()
         accessibilityRefreshTask?.cancel()
         accessibilityRequestTask?.cancel()
         microphoneRequestTask?.cancel()
         modelDownloadTask?.cancel()
-        heliumRequestTask?.cancel()
         refreshTask = nil
         accessibilityRefreshTask = nil
         accessibilityRequestTask = nil
         microphoneRequestTask = nil
         modelDownloadTask = nil
-        heliumRequestTask = nil
     }
 
     private func finishRefresh(
@@ -404,12 +321,9 @@ final class PermissionState {
         appliesAccessibility: Bool,
         microphoneID: Int,
         modelID: Int,
-        heliumID: Int,
         accessibility: AccessibilityPermissionState,
         microphone: MicrophonePermissionState,
-        modelIsReady: Bool,
-        heliumInstalled: Bool,
-        helium: HeliumAutomationPermissionState
+        modelIsReady: Bool
     ) {
         guard lifecycle == .active, refreshGeneration == refreshID else { return }
         refreshTask = nil
@@ -421,10 +335,6 @@ final class PermissionState {
         }
         if modelGeneration == modelID {
             localVoiceModel = modelIsReady ? .ready : .notDownloaded
-        }
-        if heliumGeneration == heliumID {
-            self.heliumInstalled = heliumInstalled
-            heliumAutomation = heliumInstalled ? helium : .notInstalled
         }
     }
 
@@ -458,20 +368,10 @@ final class PermissionState {
         modelDownloadTask = nil
         localVoiceModel = succeeded ? .ready : .failed
     }
-
-    private func finishHeliumRequest(generation: Int, granted: Bool) {
-        guard lifecycle == .active, heliumGeneration == generation else { return }
-        heliumGeneration += 1
-        heliumRequestTask = nil
-        heliumAutomation = granted ? .granted : .denied
-    }
 }
 
-/// Potentially blocking AX and Apple Event checks run on this actor, never on
-/// MainActor. It also serializes NSAppleScript use.
+/// Potentially blocking Accessibility checks run off MainActor.
 private actor PermissionSystemChecks {
-    private let heliumBundleID = "net.imput.helium"
-
     func accessibilityIsGranted() -> Bool {
         guard !Task.isCancelled else { return false }
         let granted = AXIsProcessTrusted()
@@ -485,73 +385,5 @@ private actor PermissionSystemChecks {
         let granted = AXIsProcessTrustedWithOptions(options)
         guard !Task.isCancelled else { return false }
         return granted
-    }
-
-    func heliumIsInstalled() -> Bool {
-        guard !Task.isCancelled else { return false }
-        let installed = NSWorkspace.shared.urlForApplication(
-            withBundleIdentifier: heliumBundleID
-        ) != nil
-        guard !Task.isCancelled else { return false }
-        return installed
-    }
-
-    func heliumAutomationStatus() -> HeliumAutomationPermissionState {
-        guard !Task.isCancelled else { return .notDetermined }
-        let permission = AutomationPermissionCheck.status(bundleID: heliumBundleID)
-        guard !Task.isCancelled else { return .notDetermined }
-        return permission
-    }
-
-    func requestHeliumAutomation() -> Bool {
-        guard !Task.isCancelled else { return false }
-        guard let script = NSAppleScript(source: """
-        with timeout of 2 seconds
-            tell application id "net.imput.helium"
-                get name
-            end tell
-        end timeout
-        """) else { return false }
-        var error: NSDictionary?
-        _ = script.executeAndReturnError(&error)
-        guard !Task.isCancelled else { return false }
-        return error == nil
-    }
-}
-
-
-/// Keep the mutable Apple Event descriptor inside a nonisolated scope. This
-/// prevents an inout C pointer from crossing the checks actor's isolation.
-private enum AutomationPermissionCheck {
-    static func status(bundleID: String) -> HeliumAutomationPermissionState {
-        var target = AEAddressDesc()
-        let byteCount = bundleID.lengthOfBytes(using: .utf8)
-        let createStatus = bundleID.withCString { pointer in
-            AECreateDesc(
-                DescType(typeApplicationBundleID),
-                pointer,
-                byteCount,
-                &target
-            )
-        }
-        guard createStatus == noErr else { return .notDetermined }
-        defer { AEDisposeDesc(&target) }
-
-        let status = AEDeterminePermissionToAutomateTarget(
-            &target,
-            AEEventClass(typeWildCard),
-            AEEventID(typeWildCard),
-            false
-        )
-        switch status {
-        case noErr:
-            return .granted
-        case OSStatus(errAEEventNotPermitted):
-            return .denied
-        case OSStatus(errAEEventWouldRequireUserConsent):
-            return .notDetermined
-        default:
-            return .notDetermined
-        }
     }
 }

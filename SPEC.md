@@ -394,7 +394,8 @@ Show:
 - Accessibility — required to read selections and paste.
 - Microphone — required for voice capture.
 - Local speech model — required for local transcription.
-- Helium Automation — optional provenance enrichment, shown when Helium is installed.
+
+App-specific provenance enrichment is automatic and best-effort. Do not present supported apps such as Ghostty, Helium, or VS Code as setup capabilities or requirements.
 
 Each row includes:
 
@@ -429,7 +430,6 @@ Mirror setup status in Settings:
 - Accessibility.
 - Microphone.
 - Local speech model.
-- Helium Automation, when Helium is installed.
 
 Provide a guided `Set Up Permissions…` action that reopens the setup window.
 
@@ -438,12 +438,11 @@ Permission actions:
 1. Request Accessibility through the existing system API and offer the System Settings helper when manual action remains.
 2. Request microphone access through the system dialog.
 3. Download the local speech model with visible progress and recoverable failure.
-4. Send a benign Helium Apple Event when Helium is installed, provoking its separate Automation prompt.
-5. Refresh displayed state when the app becomes active again.
+4. Refresh displayed state when the app becomes active again.
 
 macOS controls these grants separately; the UI must not claim there is one combined permission.
 
-Update `NSAppleEventsUsageDescription` to say that the app reads the active browser tab's title and URL to record where an annotation came from. The current description only mentions selected text and is no longer accurate.
+Keep `NSAppleEventsUsageDescription` generic: the app reads extra provenance such as an active tab URL from supported apps when available. Do not frame one supported app as a setup requirement.
 
 Do not request Screen Recording or Input Monitoring permission.
 
@@ -912,7 +911,7 @@ Required pure tests:
 - Clear-after-export only after successful clipboard abstraction result. Use an injected pasteboard writer protocol/value, not the real global pasteboard in unit tests.
 - Voice state transitions for early release, normal release, Escape from every state, failure timeout, and repeated cancellation.
 - Cancelled provenance work cannot update the store even if its system call returns later.
-- Setup readiness derives correctly from Accessibility, microphone, local-model, and optional Helium states.
+- Setup readiness derives correctly from Accessibility, microphone, and local-model states. Provenance enrichers do not affect readiness.
 - Completing or skipping voice setup persists without hiding later permission revocation in Settings.
 
 Do not unit-test Accessibility or TCC. Verify those against the real apps.

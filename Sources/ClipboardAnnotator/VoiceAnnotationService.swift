@@ -3,8 +3,8 @@ import FluidAudio
 import Foundation
 
 /// Records one short clip and sends it to the same local Parakeet engine that
-/// Hex uses. The model is downloaded only when the user first makes a voice
-/// annotation. Neither the audio nor its transcript leaves the Mac.
+/// Hex uses. The model downloads only when the user asks for voice setup or
+/// first makes a voice annotation. Neither the audio nor its transcript leaves the Mac.
 @MainActor
 final class VoiceAnnotationService {
     static let shared = VoiceAnnotationService()
@@ -23,7 +23,7 @@ final class VoiceAnnotationService {
     }
 
     func isVoiceModelReady() async -> Bool {
-        await transcriber.isLoaded()
+        await transcriber.isReady()
     }
 
     func downloadVoiceModel() async throws {
@@ -96,9 +96,9 @@ final class VoiceAnnotationService {
         defer { try? FileManager.default.removeItem(at: url) }
 
         try Task.checkCancellation()
-        let modelIsLoaded = await transcriber.isLoaded()
+        let modelIsReady = await transcriber.isReady()
         try Task.checkCancellation()
-        Diag.log(modelIsLoaded ? "voice transcription started" : "voice model download started")
+        Diag.log(modelIsReady ? "voice transcription started" : "voice model download started")
         let transcript = try await transcriber.transcribe(url: url)
         try Task.checkCancellation()
         return transcript.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -140,11 +140,21 @@ private enum VoiceAnnotationError: LocalizedError {
     }
 }
 
-private actor LocalVoiceTranscriber {
+actor LocalVoiceTranscriber {
     private let preparation = SharedAsyncPreparation<AsrManager>()
+    private let modelsAreDownloaded: @Sendable () -> Bool
 
-    func isLoaded() async -> Bool {
-        await preparation.isPrepared()
+    init(modelsAreDownloaded: @escaping @Sendable () -> Bool = {
+        AsrModels.modelsExist(
+            at: AsrModels.defaultCacheDirectory(for: .v3),
+            version: .v3
+        )
+    }) {
+        self.modelsAreDownloaded = modelsAreDownloaded
+    }
+
+    func isReady() async -> Bool {
+        await preparation.isPrepared() || modelsAreDownloaded()
     }
 
     func prepare() async throws {

@@ -29,7 +29,7 @@ struct SetupView: View {
                     .accessibilityHidden(true)
                 Text("Set Up Clipboard Annotator")
                     .font(.largeTitle.weight(.semibold))
-                Text("Grant access for text capture, then choose the optional features you want.")
+                Text("Capture selected text from any app. Accessibility enables capture; voice is optional.")
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
@@ -90,10 +90,6 @@ struct PermissionCapabilityList: View {
             microphoneRow
             Divider().padding(.leading, 46)
             voiceModelRow
-            if permissionState.heliumInstalled {
-                Divider().padding(.leading, 46)
-                heliumRow
-            }
         }
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
         .overlay {
@@ -139,18 +135,6 @@ struct PermissionCapabilityList: View {
         )
     }
 
-    private var heliumRow: some View {
-        CapabilityRow(
-            icon: "safari",
-            title: "Helium Automation",
-            reason: "Reads the active Helium tab title and URL for provenance. Optional.",
-            status: heliumStatus,
-            actionTitle: heliumActionTitle,
-            showsProgress: permissionState.heliumAutomation == .checking,
-            action: performHeliumAction
-        )
-    }
-
     private var accessibilityStatus: CapabilityStatus {
         switch permissionState.accessibility {
         case .checking: .neutral("Checking…")
@@ -179,16 +163,6 @@ struct PermissionCapabilityList: View {
         }
     }
 
-    private var heliumStatus: CapabilityStatus {
-        switch permissionState.heliumAutomation {
-        case .checking: .neutral("Checking…")
-        case .notInstalled: .neutral("Not installed")
-        case .notDetermined: .neutral("Not enabled")
-        case .denied: .attention("Denied")
-        case .granted: .ready("Granted")
-        }
-    }
-
     private var accessibilityActionTitle: String? {
         switch permissionState.accessibilityAction {
         case .requestAccessibility: "Grant Access…"
@@ -208,14 +182,6 @@ struct PermissionCapabilityList: View {
     private var voiceModelActionTitle: String? {
         guard permissionState.localVoiceModelAction == .downloadVoiceModel else { return nil }
         return permissionState.localVoiceModel == .failed ? "Retry Download…" : "Download Model…"
-    }
-
-    private var heliumActionTitle: String? {
-        switch permissionState.heliumAutomationAction {
-        case .requestHeliumAutomation: "Allow Automation…"
-        case .openHeliumAutomationSettings: "Open System Settings…"
-        default: nil
-        }
     }
 
     private func performAccessibilityAction() {
@@ -246,16 +212,6 @@ struct PermissionCapabilityList: View {
         permissionState.downloadModel()
     }
 
-    private func performHeliumAction() {
-        switch permissionState.heliumAutomationAction {
-        case .requestHeliumAutomation:
-            permissionState.requestHeliumAutomation()
-        case .openHeliumAutomationSettings:
-            permissionState.openHeliumAutomationSettings()
-        default:
-            break
-        }
-    }
 }
 
 private enum CapabilityStatus {
