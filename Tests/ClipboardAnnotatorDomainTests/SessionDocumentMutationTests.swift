@@ -110,17 +110,17 @@ final class SessionDocumentMutationTests: XCTestCase {
         )
     }
 
-    func testAnnotationAddUpdateMoveAndRemoveUseStableIDs() {
+    func testAnnotationAddEditMoveAndRemoveUseStableIDs() {
         let one = annotation(id: UUID(uuidString: "00000000-0000-0000-0000-000000000101")!, note: "one")
         let two = annotation(id: UUID(uuidString: "00000000-0000-0000-0000-000000000102")!, note: "two")
         let three = annotation(id: UUID(uuidString: "00000000-0000-0000-0000-000000000103")!, note: "three")
-        var changedTwo = two
-        changedTwo.note = "changed"
-
         var result = applied(.addAnnotation(sessionID: firstID, annotation: one), to: document())
         result = applied(.addAnnotation(sessionID: firstID, annotation: two), to: result)
         result = applied(.addAnnotation(sessionID: firstID, annotation: three), to: result)
-        result = applied(.updateAnnotation(sessionID: firstID, annotation: changedTwo), to: result)
+        result = applied(
+            .updateAnnotationNote(sessionID: firstID, annotationID: two.id, note: "changed"),
+            to: result
+        )
         result = applied(
             .moveAnnotation(sessionID: firstID, annotationID: one.id, destinationIndex: 2),
             to: result
@@ -172,24 +172,6 @@ final class SessionDocumentMutationTests: XCTestCase {
                 to: initial
             ),
             .rejected("The destination is outside the session.")
-        )
-    }
-
-    func testMissingUpdateDefersButMissingSessionRejects() {
-        let missing = annotation(id: UUID(), note: "late")
-        XCTAssertEqual(
-            SessionDocumentMutations.applying(
-                .updateAnnotation(sessionID: firstID, annotation: missing),
-                to: document()
-            ),
-            .deferred
-        )
-        XCTAssertEqual(
-            SessionDocumentMutations.applying(
-                .updateAnnotation(sessionID: secondID, annotation: missing),
-                to: document()
-            ),
-            .rejected("The target session no longer exists.")
         )
     }
 

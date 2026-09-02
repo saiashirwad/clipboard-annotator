@@ -7,7 +7,6 @@ public enum SessionDocumentMutation: Equatable, Sendable {
     case switchSession(sessionID: UUID)
     case deleteSession(sessionID: UUID)
     case addAnnotation(sessionID: UUID, annotation: Annotation)
-    case updateAnnotation(sessionID: UUID, annotation: Annotation)
     case updateAnnotationNote(sessionID: UUID, annotationID: UUID, note: String)
     case updateAnnotationProvenance(
         sessionID: UUID,
@@ -28,9 +27,6 @@ public enum SessionDocumentMutationResult: Equatable, Sendable {
     case applied(StoreDocument)
     case noOp
     case rejected(String)
-
-    /// The annotation may be added by a later ordered mutation.
-    case deferred
 }
 
 public struct SessionDocumentValidationError: Error, Equatable, Sendable, CustomStringConvertible {
@@ -164,20 +160,6 @@ public enum SessionDocumentMutations {
                 return .rejected("The annotation already exists.")
             }
             document.sessions[sessionIndex].entries.append(annotation)
-
-        case let .updateAnnotation(sessionID, annotation):
-            guard let sessionIndex = sessionIndex(sessionID, in: document) else {
-                return .rejected("The target session no longer exists.")
-            }
-            guard let annotationIndex = document.sessions[sessionIndex].entries.firstIndex(where: {
-                $0.id == annotation.id
-            }) else {
-                return .deferred
-            }
-            guard document.sessions[sessionIndex].entries[annotationIndex] != annotation else {
-                return .noOp
-            }
-            document.sessions[sessionIndex].entries[annotationIndex] = annotation
 
         case let .updateAnnotationNote(sessionID, annotationID, note):
             guard let sessionIndex = sessionIndex(sessionID, in: document),

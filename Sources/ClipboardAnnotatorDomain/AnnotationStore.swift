@@ -12,10 +12,6 @@ public enum AnnotationStoreError: Error, Equatable, Sendable {
 @MainActor
 @Observable
 public final class AnnotationStore {
-    private struct QueuedMutation: Sendable {
-        let mutation: SessionDocumentMutation
-    }
-
     private enum CommitOutcome {
         case committed
         case failed
@@ -26,8 +22,7 @@ public final class AnnotationStore {
     private let persistence: StorePersistence
     private let onChange: @MainActor @Sendable () -> Void
 
-    private var queuedMutations: [QueuedMutation] = []
-    private var deferredMutations: [QueuedMutation] = []
+    private var queuedMutations: [SessionDocumentMutation] = []
     @ObservationIgnored private var processingTask: Task<Void, Never>?
     @ObservationIgnored private var idleWaiters: [CheckedContinuation<Void, Never>] = []
     @ObservationIgnored private var isHalted = false
@@ -57,7 +52,7 @@ public final class AnnotationStore {
     }
 
     public var hasPendingMutations: Bool {
-        !queuedMutations.isEmpty || !deferredMutations.isEmpty
+        !queuedMutations.isEmpty
     }
 
     /// Loads the committed document. On first launch it commits `Default`
@@ -97,7 +92,7 @@ public final class AnnotationStore {
             return
         }
 
-        queuedMutations.append(QueuedMutation(mutation: mutation))
+        queuedMutations.append(mutation)
         startProcessingIfNeeded()
     }
 
@@ -112,8 +107,7 @@ public final class AnnotationStore {
         startProcessingIfNeeded()
     }
 
-    /// Returns when the active drain completes or halts. Retained mutations and
-    /// deferred late updates do not keep this barrier suspended.
+    /// Returns when the active drain completes or halts.
     public func waitForIdle() async {
         guard !isTornDown, processingTask != nil else { return }
         await withCheckedContinuation { continuation in
@@ -121,14 +115,13 @@ public final class AnnotationStore {
         }
     }
 
-    /// Stops accepting changes, discards queued and deferred work, and cancels
+    /// Stops accepting changes, discards queued work, and cancels
     /// the one task owned by the store. Repeated calls have no further effect.
     public func teardown() {
         guard !isTornDown else { return }
         isTornDown = true
         isHalted = false
         queuedMutations.removeAll()
-        deferredMutations.removeAll()
         processingTask?.cancel()
         resumeIdleWaiters()
     }
@@ -141,78 +134,30 @@ public final class AnnotationStore {
     }
 
     private func processQueue() async {
-        if !deferredMutations.isEmpty {
-            guard await retryDeferredMutations() else {
-                finishProcessing()
-                return
-            }
-        }
-
         while !Task.isCancelled, !queuedMutations.isEmpty {
-            let queued = queuedMutations.removeFirst()
-            switch SessionDocumentMutations.applying(queued.mutation, to: document) {
-            case let .applied(candidate):
-                switch await commit(candidate) {
-                case .committed:
-                    guard await retryDeferredMutations() else {
-                        finishProcessing()
-                        return
-                    }
-                case .failed:
-                    queuedMutations.insert(queued, at: 0)
-                    isHalted = true
-                    finishProcessing()
-                    return
-                case .cancelled:
-                    finishProcessing()
-                    return
-                }
-            case .noOp:
-                break
-            case let .rejected(message):
-                error = .mutationRejected(message)
-            case .deferred:
-                deferredMutations.append(queued)
-            }
-        }
-
-        finishProcessing()
-    }
-
-    /// Returns false when processing must halt or stop.
-    private func retryDeferredMutations() async -> Bool {
-        guard !Task.isCancelled, !deferredMutations.isEmpty else {
-            return !Task.isCancelled
-        }
-        let pending = deferredMutations
-        deferredMutations.removeAll()
-        var retained: [QueuedMutation] = []
-
-        for (index, queued) in pending.enumerated() {
-            guard !Task.isCancelled else { return false }
-            switch SessionDocumentMutations.applying(queued.mutation, to: document) {
+            let mutation = queuedMutations.removeFirst()
+            switch SessionDocumentMutations.applying(mutation, to: document) {
             case let .applied(candidate):
                 switch await commit(candidate) {
                 case .committed:
                     break
                 case .failed:
-                    deferredMutations = retained + pending[index...]
+                    queuedMutations.insert(mutation, at: 0)
                     isHalted = true
-                    return false
+                    finishProcessing()
+                    return
                 case .cancelled:
-                    return false
+                    finishProcessing()
+                    return
                 }
             case .noOp:
                 break
             case let .rejected(message):
                 error = .mutationRejected(message)
-            case .deferred:
-                retained.append(queued)
             }
         }
 
-        deferredMutations = retained
-        return true
+        finishProcessing()
     }
 
     private func commit(_ candidate: StoreDocument) async -> CommitOutcome {

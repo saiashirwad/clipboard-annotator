@@ -138,48 +138,6 @@ final class AnnotationStoreTests: XCTestCase {
         ])
     }
 
-    func testDeferredCommitFailureRetainsDeferredAndNormalWorkUntilRetry() async throws {
-        let original = document()
-        let recorder = AttemptRecorder(failingAttempts: [2])
-        let persistence = StorePersistence(
-            load: { original },
-            commit: { document in try await recorder.commit(document) }
-        )
-        let store = try await AnnotationStore(persistence: persistence)
-        let base = annotation(note: "base")
-        var enriched = base
-        enriched.note = "enriched"
-        let later = annotation(note: "later")
-
-        store.mutate(.updateAnnotation(sessionID: sessionID, annotation: enriched))
-        store.mutate(.addAnnotation(sessionID: sessionID, annotation: base))
-        store.mutate(.addAnnotation(sessionID: sessionID, annotation: later))
-        await store.waitForIdle()
-
-        XCTAssertEqual(store.currentEntries, [base])
-        XCTAssertEqual(store.error, .commitFailed("failed"))
-        XCTAssertTrue(store.hasPendingMutations)
-        var attempts = await recorder.documents()
-        XCTAssertEqual(attempts.map { $0.sessions[0].entries.map(\.note) }, [
-            ["base"],
-            ["enriched"],
-        ])
-
-        store.retryPendingMutations()
-        await store.waitForIdle()
-
-        XCTAssertEqual(store.currentEntries, [enriched, later])
-        XCTAssertNil(store.error)
-        XCTAssertFalse(store.hasPendingMutations)
-        attempts = await recorder.documents()
-        XCTAssertEqual(attempts.map { $0.sessions[0].entries.map(\.note) }, [
-            ["base"],
-            ["enriched"],
-            ["enriched"],
-            ["enriched", "later"],
-        ])
-    }
-
     func testRapidMutationsCommitInOrderWithoutLostUpdates() async throws {
         let original = document()
         let recorder = CommitRecorder(delayNanoseconds: 5_000_000)
@@ -260,31 +218,6 @@ final class AnnotationStoreTests: XCTestCase {
         await store.waitForIdle()
         XCTAssertEqual(store.currentEntries, [added])
         XCTAssertEqual(callbackSnapshots, [[added]])
-    }
-
-    func testDeferredLateUpdateAppliesAfterItsQueuedAdd() async throws {
-        let original = document()
-        let recorder = CommitRecorder()
-        let persistence = StorePersistence(
-            load: { original },
-            commit: { document in await recorder.record(document) }
-        )
-        var callbackCount = 0
-        let store = try await AnnotationStore(persistence: persistence) {
-            callbackCount += 1
-        }
-        let base = annotation(note: "base provenance")
-        var enriched = base
-        enriched.note = "late provenance"
-
-        store.mutate(.updateAnnotation(sessionID: sessionID, annotation: enriched))
-        store.mutate(.addAnnotation(sessionID: sessionID, annotation: base))
-        await store.waitForIdle()
-
-        XCTAssertEqual(store.currentEntries, [enriched])
-        let commitNotes = await recorder.documents().map { $0.sessions[0].entries[0].note }
-        XCTAssertEqual(commitNotes, ["base provenance", "late provenance"])
-        XCTAssertEqual(callbackCount, 2)
     }
 
     func testNoteAndProvenanceOnlyUpdatesPreserveEachOtherInBothQueueOrders() async throws {
