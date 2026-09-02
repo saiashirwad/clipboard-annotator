@@ -13,7 +13,7 @@ enum PermissionCheck {
         if AXIsProcessTrusted() { return true }
 
         if promptSystemDialog {
-            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+            let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
             _ = AXIsProcessTrustedWithOptions(options)
         }
 
