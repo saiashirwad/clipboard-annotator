@@ -31,6 +31,8 @@
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>NSAppleEventsUsageDescription</key>
-    <string>Clipboard Annotator reads the text you have highlighted in other apps.</string>
+    <string>Clipboard Annotator asks your browser for the active tab’s title and URL so a note records where it came from.</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.productivity</string>
 </dict>
 </plist>

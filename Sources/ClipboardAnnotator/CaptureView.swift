@@ -1,12 +1,12 @@
 import AppKit
 import SwiftUI
 
-/// Just the quote and a box to write in. Esc cancels, ⌘↩ saves; the panel
-/// handles both, so nothing here needs a button.
+/// The typed capture draft and its inline save recovery controls.
 struct CaptureView: View {
-    @ObservedObject var model: CaptureModel
-    let onSave: () -> Void
-    let onCancel: () -> Void
+    @Bindable var model: CaptureModel
+    let onRetry: () -> Void
+    let onSaveToCurrentSession: () -> Void
+    let onDiscard: () -> Void
 
     @FocusState private var noteFocused: Bool
     @State private var quoteHeight: CGFloat = 0
@@ -23,7 +23,7 @@ struct CaptureView: View {
                 quoteBlock
             }
             noteEditor
-            voiceStatus
+            saveStatus
         }
         .padding(14)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -66,6 +66,7 @@ struct CaptureView: View {
                 .focused($noteFocused)
                 .frame(minHeight: 84)
                 .overlayScrollers()
+                .disabled(model.isNoteFrozen)
 
             if model.note.isEmpty {
                 Text("Add a note…")
@@ -87,26 +88,58 @@ struct CaptureView: View {
     }
 
     @ViewBuilder
-    private var voiceStatus: some View {
-        switch model.voiceState {
-        case .idle:
+    private var saveStatus: some View {
+        switch model.savePhase {
+        case .editing, .dismissed:
             EmptyView()
-        case .recording:
-            Label("Listening… Release the shortcut to save.", systemImage: "mic.fill")
-                .foregroundStyle(.red)
-                .font(.footnote)
-        case .preparingModel:
-            Label("Downloading the local voice model…", systemImage: "arrow.down.circle")
-                .foregroundStyle(.secondary)
-                .font(.footnote)
-        case .transcribing:
-            Label("Transcribing on this Mac…", systemImage: "waveform")
-                .foregroundStyle(.secondary)
-                .font(.footnote)
-        case let .failed(message):
-            Label(message, systemImage: "exclamationmark.triangle")
-                .foregroundStyle(.orange)
-                .font(.footnote)
+        case .pendingCommit:
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Saving…")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            .accessibilityElement(children: .combine)
+        case let .retryableCommitFailure(_, message):
+            statusRow(message: message, color: .red) {
+                Button("Retry", action: onRetry)
+                    .buttonStyle(.borderedProminent)
+            }
+        case let .targetUnavailable(message):
+            VStack(alignment: .leading, spacing: 8) {
+                Label(message, systemImage: "exclamationmark.triangle.fill")
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Button("Save to Current Session", action: onSaveToCurrentSession)
+                        .buttonStyle(.borderedProminent)
+                    Button("Discard", role: .destructive, action: onDiscard)
+                }
+            }
+        case let .terminalSaveFailure(message):
+            statusRow(message: message, color: .red) {
+                Button("Discard", role: .destructive, action: onDiscard)
+            }
+        case .committed:
+            Label("Saved", systemImage: "checkmark.circle.fill")
+                .font(.callout)
+                .foregroundStyle(.green)
+        }
+    }
+
+    private func statusRow<Actions: View>(
+        message: String,
+        color: Color,
+        @ViewBuilder actions: () -> Actions
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(message, systemImage: "exclamationmark.circle.fill")
+                .font(.callout)
+                .foregroundStyle(color)
+                .fixedSize(horizontal: false, vertical: true)
+            actions()
         }
     }
 }

@@ -5,6 +5,7 @@ struct CapturedSelection {
     var text: String
     var appName: String?
     var appBundleID: String?
+    var processIdentifier: pid_t = 0
     var screenRect: CGRect?
 }
 
@@ -17,7 +18,20 @@ struct CapturedSelection {
 ///  2. Synthesise ⌘C, read the pasteboard, then put the old pasteboard back.
 enum SelectionCapture {
 
-    static func capture() -> CapturedSelection {
+    /// How far to go when Accessibility reports no selection.
+    enum FallbackPolicy {
+        /// Typed capture: the user has let go of the shortcut, so wait for the
+        /// modifiers and give the app time to copy.
+        case patient
+        /// Hold-to-talk: the modifiers stay down by design, and no selection
+        /// usually means a free-standing thought, so only glance at the clipboard.
+        case brief
+
+        var waitsForModifierRelease: Bool { self == .patient }
+        var clipboardTimeout: TimeInterval { self == .patient ? 0.7 : 0.15 }
+    }
+
+    static func capture(fallback: FallbackPolicy = .patient) -> CapturedSelection {
         let app = NSWorkspace.shared.frontmostApplication
         var rect: CGRect?
         var text = ""
@@ -27,13 +41,17 @@ enum SelectionCapture {
             rect = axRect
         }
         if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            text = copyViaKeystroke() ?? ""
+            text = copyViaKeystroke(
+                processIdentifier: app?.processIdentifier ?? 0,
+                fallback: fallback
+            ) ?? ""
         }
 
         return CapturedSelection(
             text: text,
             appName: app?.localizedName,
             appBundleID: app?.bundleIdentifier,
+            processIdentifier: app?.processIdentifier ?? 0,
             screenRect: rect
         )
     }
@@ -80,35 +98,44 @@ enum SelectionCapture {
 
     // MARK: - Clipboard fallback
 
-    private static func copyViaKeystroke() -> String? {
-        let pb = NSPasteboard.general
-        let saved = snapshot(pb)
-        let before = pb.changeCount
+    private static func copyViaKeystroke(
+        processIdentifier: pid_t,
+        fallback: FallbackPolicy
+    ) -> String? {
+        let pasteboard = NSPasteboard.general
+        let saved = snapshot(pasteboard)
+        let changeCountBeforeCopy = pasteboard.changeCount
 
-        waitForModifierRelease()
-        postCommandC()
+        if fallback.waitsForModifierRelease { waitForModifierRelease() }
+        postCommandKey(
+            8,
+            processIdentifier: processIdentifier > 0 ? processIdentifier : nil
+        ) // kVK_ANSI_C
 
+        var copiedChangeCount: Int?
         var result: String?
-        let deadline = Date().addingTimeInterval(0.7)
+        let deadline = Date().addingTimeInterval(fallback.clipboardTimeout)
         while Date() < deadline {
-            if pb.changeCount != before {
-                result = pb.string(forType: .string)
+            if pasteboard.changeCount != changeCountBeforeCopy {
+                copiedChangeCount = pasteboard.changeCount
+                result = pasteboard.string(forType: .string)
                 break
             }
             RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.02))
         }
 
-        restore(saved, to: pb)
+        // Do not overwrite clipboard data changed after the copy we observed.
+        if let copiedChangeCount, pasteboard.changeCount == copiedChangeCount {
+            restore(saved, to: pasteboard)
+        }
         return result
     }
 
-    private static func postCommandC() { postCommandKey(8) }  // kVK_ANSI_C
-
-    /// Sends ⌘V to whichever app is frontmost. We are an accessory app and
-    /// never activate for this, so the target keeps its focus and caret.
-    static func pasteIntoFrontmostApp() {
+    /// Sends ⌘V to the app that was frontmost when export began.
+    static func paste(into processIdentifier: pid_t) {
+        guard processIdentifier > 0 else { return }
         waitForModifierRelease()
-        postCommandKey(9)  // kVK_ANSI_V
+        postCommandKey(9, processIdentifier: processIdentifier)  // kVK_ANSI_V
     }
 
     /// A synthetic ⌘-key event inherits whatever modifiers are physically held.
@@ -125,7 +152,7 @@ enum SelectionCapture {
         Diag.log("waitForModifierRelease timed out, flags still \(NSEvent.modifierFlags.rawValue)")
     }
 
-    private static func postCommandKey(_ key: CGKeyCode) {
+    private static func postCommandKey(_ key: CGKeyCode, processIdentifier: pid_t? = nil) {
         guard let source = CGEventSource(stateID: .combinedSessionState) else { return }
         source.setLocalEventsFilterDuringSuppressionState(
             [.permitLocalMouseEvents, .permitSystemDefinedEvents], state: .eventSuppressionStateSuppressionInterval
@@ -134,8 +161,13 @@ enum SelectionCapture {
         let up = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: false)
         down?.flags = .maskCommand
         up?.flags = .maskCommand
-        down?.post(tap: .cgAnnotatedSessionEventTap)
-        up?.post(tap: .cgAnnotatedSessionEventTap)
+        if let processIdentifier {
+            down?.postToPid(processIdentifier)
+            up?.postToPid(processIdentifier)
+        } else {
+            down?.post(tap: .cgAnnotatedSessionEventTap)
+            up?.post(tap: .cgAnnotatedSessionEventTap)
+        }
     }
 
     private struct PasteboardItemSnapshot {

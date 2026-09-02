@@ -1,5 +1,5 @@
 import AppKit
-import Combine
+import ClipboardAnnotatorDomain
 import SwiftUI
 
 @MainActor
@@ -7,43 +7,163 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var stackWindow: NSWindow?
     private var settingsWindow: NSWindow?
-    private var cancellables = Set<AnyCancellable>()
+    private var setupWindowController: SetupWindowController?
+    private var accessibilityHelperWindowController: AccessibilityHelperWindowController?
+    private var profileEditor: ProfileEditorState?
+    private var quickSwitch: QuickSwitchWindowController?
+    private enum StoreState {
+        case loading
+        case available(AnnotationStore)
+        case unavailable(String)
+    }
+
+    private var storeState: StoreState = .loading
+    private var bootstrapTask: Task<Void, Never>?
+    private var menuMutationTask: Task<Void, Never>?
+    private var pasteTask: Task<Void, Never>?
+    private var captureObserver: NSObjectProtocol?
 
     private var flashToken = 0
     private var flashing = false
 
-    private let store = AnnotationStore.shared
-    private let settings = AppSettings.shared
+    private let settings: AppSettings
+    private let captureController: CaptureController
+    private let permissionState: PermissionState
+
+    override init() {
+        let settings = AppSettings.shared
+        let permissionState = PermissionState()
+        self.settings = settings
+        self.permissionState = permissionState
+        self.captureController = CaptureController(
+            settings: settings,
+            permissionState: permissionState
+        )
+        super.init()
+        captureController.onAccessibilityRequired = { [weak self] in
+            self?.presentPermissionHelpForCapture()
+        }
+        captureController.onStatusChange = { [weak self] in
+            self?.refreshStatusItem()
+        }
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Diag.log("=== launch pid=\(ProcessInfo.processInfo.processIdentifier) ===")
         installMainMenu()
         setUpStatusItem()
         settings.onHotKeysChanged = { [weak self] in self?.registerHotKeys() }
+        settings.onProfilesChanged = { [weak self] in self?.refreshStatusItem() }
         registerHotKeys()
+        permissionState.refresh()
 
-        store.$entries
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.refreshStatusItem() }
-            .store(in: &cancellables)
-
-        store.$lastCleared
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.rebuildMenu() }
-            .store(in: &cancellables)
+        bootstrapStore()
 
         // The capture panel needs the app frontmost to take keystrokes, and
         // activating brings every window forward. Get the others out of the way.
-        NotificationCenter.default.addObserver(
+        captureObserver = NotificationCenter.default.addObserver(
             forName: .captureWillPresent, object: nil, queue: nil
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.hideAuxiliaryWindows() }
         }
 
-        if !PermissionCheck.isTrusted {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                PermissionCheck.ensureAccessibility()
+        if !settings.hasCompletedSetup {
+            presentSetup()
+        }
+    }
+
+    private func bootstrapStore() {
+        bootstrapTask?.cancel()
+        storeState = .loading
+        refreshStatusItem()
+
+        bootstrapTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let store = try await AnnotationStore(
+                    persistence: .live(),
+                    onChange: { [weak self] in self?.storeDidChange() }
+                )
+                guard !Task.isCancelled else {
+                    store.teardown()
+                    return
+                }
+                bootstrapTask = nil
+                storeState = .available(store)
+                captureController.configure(store: store)
+                refreshStatusItem()
+            } catch is CancellationError {
+                // App termination owns cancellation and teardown.
+            } catch {
+                guard !Task.isCancelled else { return }
+                bootstrapTask = nil
+                storeState = .unavailable(error.localizedDescription)
+                Diag.log("store bootstrap failed: \(error)")
+                refreshStatusItem()
             }
+        }
+    }
+
+    private func storeDidChange() {
+        refreshStatusItem()
+    }
+
+    private var store: AnnotationStore? {
+        guard case let .available(store) = storeState else { return nil }
+        return store
+    }
+
+    private var isStoreAvailable: Bool { store != nil }
+
+    private var unavailableMenuTitle: String {
+        switch storeState {
+        case .loading:
+            return "Loading Annotations…"
+        case .available:
+            return "Nothing Captured Yet"
+        case let .unavailable(message):
+            return "Annotations Unavailable: \(message)"
+        }
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        permissionState.refresh()
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let profileEditor else { return .terminateNow }
+        return ProfileDialogs.shouldClose(profileEditor) ? .terminateNow : .terminateCancel
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        bootstrapTask?.cancel()
+        bootstrapTask = nil
+        menuMutationTask?.cancel()
+        menuMutationTask = nil
+        pasteTask?.cancel()
+        pasteTask = nil
+        quickSwitch?.close()
+        setupWindowController?.teardown()
+        setupWindowController = nil
+        accessibilityHelperWindowController?.teardown()
+        accessibilityHelperWindowController = nil
+        settingsWindow?.delegate = nil
+        settingsWindow?.close()
+        settingsWindow = nil
+        stackWindow?.delegate = nil
+        stackWindow?.close()
+        stackWindow = nil
+        captureController.teardown()
+        permissionState.teardown()
+        store?.teardown()
+        if let captureObserver {
+            NotificationCenter.default.removeObserver(captureObserver)
+            self.captureObserver = nil
+        }
+        settings.onHotKeysChanged = nil
+        settings.onProfilesChanged = nil
+        for name in ["capture", "voiceCapture", "copy", "stack", "switchSession", "clear"] {
+            HotKeyCenter.shared.unregister(name: name)
         }
     }
 
@@ -59,6 +179,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let appItem = NSMenuItem()
         appItem.submenu = NSMenu(title: "Clipboard Annotator")
         main.addItem(appItem)
+
+        let file = NSMenu(title: "File")
+        file.addItem(
+            withTitle: "Close Window",
+            action: #selector(NSWindow.performClose(_:)),
+            keyEquivalent: "w"
+        )
+        let fileItem = NSMenuItem()
+        fileItem.submenu = file
+        main.addItem(fileItem)
 
         let edit = NSMenu(title: "Edit")
         edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
@@ -100,8 +230,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func applyCountTitle() {
-        let count = store.entries.count
+        let count = store?.currentEntries.count ?? 0
         statusItem.button?.title = count > 0 ? " \(count)" : ""
+        let sessionName = store?.currentSession.name ?? "No session"
+        statusItem.button?.toolTip = "\(sessionName) · \(settings.activeProfile.name)"
     }
 
     private func flashStatus(_ text: String) {
@@ -119,22 +251,114 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func rebuildMenu() {
         let menu = NSMenu()
 
-        let capture = NSMenuItem(title: "Capture Selection", action: #selector(captureSelection), keyEquivalent: "")
+        let capture = NSMenuItem(
+            title: "Capture Selection",
+            action: isStoreAvailable ? #selector(captureSelection) : nil,
+            keyEquivalent: ""
+        )
         capture.target = self
         apply(settings.captureCombo, to: capture)
         menu.addItem(capture)
 
-        let show = NSMenuItem(title: "Show Stack…", action: #selector(showStack), keyEquivalent: "")
+        let show = NSMenuItem(
+            title: "Show Stack…",
+            action: isStoreAvailable ? #selector(showStack) : nil,
+            keyEquivalent: ""
+        )
         show.target = self
         apply(settings.stackCombo, to: show)
         menu.addItem(show)
 
+        let facts = store.map {
+            SessionUIFacts(
+                sessions: $0.sessions,
+                currentSessionID: $0.currentSessionID,
+                lastCleared: $0.lastCleared
+            )
+        }
+        if let facts, let current = facts.current {
+            let summary = NSMenuItem(title: facts.currentTitle, action: nil, keyEquivalent: "")
+            menu.addItem(summary)
+
+            let sessionMenu = NSMenu(title: "Session")
+            for session in facts.sessions {
+                let item = NSMenuItem(
+                    title: "\(session.name) (\(session.annotationCount))",
+                    action: #selector(switchToSession(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = self
+                item.representedObject = session.id as NSUUID
+                item.state = session.isCurrent ? .on : .off
+                sessionMenu.addItem(item)
+            }
+            sessionMenu.addItem(.separator())
+
+            let quickSwitch = NSMenuItem(
+                title: "Switch Session…",
+                action: #selector(showQuickSwitcher),
+                keyEquivalent: ""
+            )
+            quickSwitch.target = self
+            apply(settings.switchSessionCombo, to: quickSwitch)
+            sessionMenu.addItem(quickSwitch)
+            sessionMenu.addItem(.separator())
+
+            let newSession = NSMenuItem(
+                title: "New Session…",
+                action: #selector(newSession(_:)),
+                keyEquivalent: ""
+            )
+            newSession.target = self
+            sessionMenu.addItem(newSession)
+
+            let rename = NSMenuItem(
+                title: "Rename Current Session…",
+                action: #selector(renameSession(_:)),
+                keyEquivalent: ""
+            )
+            rename.target = self
+            rename.representedObject = current.id as NSUUID
+            sessionMenu.addItem(rename)
+
+            let delete = NSMenuItem(
+                title: "Delete Current Session…",
+                action: facts.canDelete ? #selector(deleteSession(_:)) : nil,
+                keyEquivalent: ""
+            )
+            delete.target = self
+            delete.representedObject = current.id as NSUUID
+            sessionMenu.addItem(delete)
+
+            let sessionRoot = NSMenuItem(title: "Session", action: nil, keyEquivalent: "")
+            sessionRoot.submenu = sessionMenu
+            menu.addItem(sessionRoot)
+        }
+
+        let profileMenu = NSMenu(title: "Profile")
+        for profile in settings.profiles {
+            let item = NSMenuItem(
+                title: profile.name,
+                action: #selector(selectProfile(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = profile.id as NSUUID
+            item.state = profile.id == settings.activeProfileID ? .on : .off
+            profileMenu.addItem(item)
+        }
+        let profileRoot = NSMenuItem(title: "Profile", action: nil, keyEquivalent: "")
+        profileRoot.submenu = profileMenu
+        menu.addItem(profileRoot)
+
         menu.addItem(.separator())
 
-        let count = store.entries.count
+        let count = facts?.current?.annotationCount ?? 0
         let verb = settings.pasteDirectly ? "Paste" : "Copy"
         let copy = NSMenuItem(
-            title: count > 0 ? "\(verb) \(count) Annotation\(count == 1 ? "" : "s") as Markdown" : "Nothing Captured Yet",
+            title: count > 0
+                ? "\(verb) \(count) Annotation\(count == 1 ? "" : "s") as Markdown"
+                : unavailableMenuTitle,
             action: count > 0 ? #selector(copyMarkdown) : nil,
             keyEquivalent: ""
         )
@@ -142,20 +366,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         apply(settings.copyCombo, to: copy)
         menu.addItem(copy)
 
-        let clear = NSMenuItem(title: "Clear Stack", action: count > 0 ? #selector(clearStack) : nil, keyEquivalent: "")
+        let clear = NSMenuItem(
+            title: facts?.current.map { "Clear \($0.name)" } ?? "Clear Current Session",
+            action: count > 0 ? #selector(clearSession(_:)) : nil,
+            keyEquivalent: ""
+        )
         clear.target = self
+        clear.representedObject = facts?.current?.id as NSUUID?
         apply(settings.clearCombo, to: clear)
         menu.addItem(clear)
 
-        if !store.lastCleared.isEmpty {
-            let undo = NSMenuItem(
-                title: "Undo Clear (\(store.lastCleared.count))",
+        if let undo = facts?.undo {
+            let item = NSMenuItem(
+                title: undo.title,
                 action: #selector(undoClear),
                 keyEquivalent: "z"
             )
-            undo.keyEquivalentModifierMask = [.command]
-            undo.target = self
-            menu.addItem(undo)
+            item.keyEquivalentModifierMask = [.command]
+            item.target = self
+            menu.addItem(item)
+        }
+
+        if let error = store?.error {
+            menu.addItem(.separator())
+            let errorItem = NSMenuItem(
+                title: annotationStoreErrorMessage(error),
+                action: nil,
+                keyEquivalent: ""
+            )
+            menu.addItem(errorItem)
+            if store?.hasPendingMutations == true {
+                let retry = NSMenuItem(
+                    title: "Retry Pending Session Changes",
+                    action: #selector(retryPendingMutations),
+                    keyEquivalent: ""
+                )
+                retry.target = self
+                menu.addItem(retry)
+            }
         }
 
         menu.addItem(.separator())
@@ -193,13 +441,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             name: "voiceCapture",
             combo: settings.voiceCaptureCombo,
             pressed: { [weak self] in self?.captureVoiceSelection() },
-            released: { CaptureController.shared.endVoiceCapture() }
+            released: { [weak self] in self?.captureController.endVoiceCapture() }
         )
         HotKeyCenter.shared.register(name: "copy", combo: settings.copyCombo) { [weak self] in
             self?.copyMarkdown()
         }
         HotKeyCenter.shared.register(name: "stack", combo: settings.stackCombo) { [weak self] in
             self?.showStack()
+        }
+        HotKeyCenter.shared.register(name: "switchSession", combo: settings.switchSessionCombo) { [weak self] in
+            self?.showQuickSwitcher()
         }
         HotKeyCenter.shared.register(name: "clear", combo: settings.clearCombo) { [weak self] in
             self?.clearStack()
@@ -211,95 +462,352 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func captureSelection() {
         Diag.log("captureSelection invoked")
-        CaptureController.shared.beginCapture()
+        captureController.beginCapture()
     }
 
     private func captureVoiceSelection() {
         Diag.log("voice capture invoked")
-        CaptureController.shared.beginVoiceCapture()
+        captureController.beginVoiceCapture()
     }
 
     @objc private func copyMarkdown() {
-        let count = store.entries.count
-        let target = NSWorkspace.shared.frontmostApplication?.localizedName ?? "?"
-        Diag.log("copyMarkdown invoked, count=\(count) paste=\(settings.pasteDirectly) front=\(target)")
-        guard store.copyMarkdownToPasteboard() else { NSSound.beep(); return }
+        guard let store else { NSSound.beep(); return }
+        pasteTask?.cancel()
+        pasteTask = nil
+        let count = store.currentEntries.count
+        let target = NSWorkspace.shared.frontmostApplication
+        let targetName = target?.localizedName ?? "?"
+        let targetProcessIdentifier = target?.processIdentifier ?? 0
+        Diag.log("copyMarkdown invoked, count=\(count) paste=\(settings.pasteDirectly) front=\(targetName)")
+        let clearsAfterExport = settings.activeProfile.clearSessionAfterExport
+        guard CurrentSessionExport.copy(store: store, settings: settings) else {
+            NSSound.beep()
+            return
+        }
+        if clearsAfterExport {
+            observeMenuMutation(store: store, presentsError: false)
+        }
 
         guard settings.pasteDirectly else {
             flashStatus("Copied \(count)")
             return
         }
         // Give the target app a moment to see the new pasteboard before ⌘V.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-            SelectionCapture.pasteIntoFrontmostApp()
+        // Retain its PID so a focus change cannot redirect the paste.
+        pasteTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(120))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            SelectionCapture.paste(into: targetProcessIdentifier)
+            self?.pasteTask = nil
         }
         flashStatus("Pasted \(count)")
     }
 
     @objc private func clearStack() {
-        let count = store.entries.count
-        Diag.log("clearStack invoked, count=\(count)")
-        guard count > 0 else { NSSound.beep(); return }
-        store.clear()
-        flashStatus("Cleared \(count)")
+        guard let store else { NSSound.beep(); return }
+        let sessionID = store.currentSessionID
+        guard let session = store.sessions.first(where: { $0.id == sessionID }), !session.entries.isEmpty else {
+            NSSound.beep()
+            return
+        }
+        Diag.log("clearStack invoked, session=\(sessionID), count=\(session.entries.count)")
+        enqueueMenuMutation(.clearSession(sessionID: sessionID))
+    }
+
+    @objc private func clearSession(_ sender: NSMenuItem) {
+        guard let sessionID = capturedSessionID(from: sender) else { NSSound.beep(); return }
+        enqueueMenuMutation(.clearSession(sessionID: sessionID))
     }
 
     @objc private func undoClear() {
-        store.undoClear()
+        guard store != nil else { NSSound.beep(); return }
+        enqueueMenuMutation(.undoClear)
+    }
+
+    @objc private func switchToSession(_ sender: NSMenuItem) {
+        guard let sessionID = capturedSessionID(from: sender) else { NSSound.beep(); return }
+        enqueueMenuMutation(.switchSession(sessionID: sessionID))
+    }
+
+    @objc private func selectProfile(_ sender: NSMenuItem) {
+        guard let profileID = capturedSessionID(from: sender) else { NSSound.beep(); return }
+        requestProfileSelection(profileID)
+    }
+
+    private func requestProfileSelection(_ profileID: UUID) {
+        if let profileEditor {
+            switch profileEditor.requestSelection(profileID) {
+            case .needsDecision:
+                _ = ProfileDialogs.resolvePendingSelection(profileEditor)
+            case .selected, .unchanged:
+                break
+            case .rejected:
+                NSSound.beep()
+            }
+            return
+        }
+        do {
+            try settings.selectProfile(id: profileID)
+        } catch {
+            NSSound.beep()
+        }
+    }
+
+    @objc private func newSession(_ sender: NSMenuItem) {
+        guard let store else { NSSound.beep(); return }
+        let sessions = store.sessions
+        guard
+            let draft = SessionDialogs.requestNewSessionName(sessions: sessions),
+            let name = SessionDialogs.validateForEnqueue(
+                draft,
+                excluding: nil,
+                sessions: store.sessions
+            )
+        else { return }
+        enqueueMenuMutation(.createSession(Session(name: name)), presentsError: true)
+    }
+
+    @objc private func renameSession(_ sender: NSMenuItem) {
+        guard let store, let sessionID = capturedSessionID(from: sender) else {
+            NSSound.beep()
+            return
+        }
+        let sessions = store.sessions
+        guard
+            let draft = SessionDialogs.requestRenamedSessionName(
+                sessionID: sessionID,
+                sessions: sessions
+            ),
+            let name = SessionDialogs.validateForEnqueue(
+                draft,
+                excluding: sessionID,
+                sessions: store.sessions
+            )
+        else { return }
+        enqueueMenuMutation(
+            .renameSession(sessionID: sessionID, name: name),
+            presentsError: true
+        )
+    }
+
+    @objc private func deleteSession(_ sender: NSMenuItem) {
+        guard let store, let sessionID = capturedSessionID(from: sender) else {
+            NSSound.beep()
+            return
+        }
+        let sessions = store.sessions
+        guard SessionDialogs.confirmsDelete(
+            sessionID: sessionID,
+            sessions: sessions,
+            lastCleared: store.lastCleared
+        ) else { return }
+        enqueueMenuMutation(.deleteSession(sessionID: sessionID), presentsError: true)
+    }
+
+    @objc private func retryPendingMutations() {
+        guard let store else { NSSound.beep(); return }
+        store.retryPendingMutations()
+        observeMenuMutation(store: store, presentsError: true)
+    }
+
+    private func capturedSessionID(from sender: NSMenuItem) -> UUID? {
+        if let id = sender.representedObject as? UUID { return id }
+        if let id = sender.representedObject as? NSUUID { return id as UUID }
+        return nil
+    }
+
+    private func enqueueMenuMutation(
+        _ mutation: SessionDocumentMutation,
+        presentsError: Bool = false
+    ) {
+        guard let store else { NSSound.beep(); return }
+        store.mutate(mutation)
+        observeMenuMutation(store: store, presentsError: presentsError)
+    }
+
+    private func observeMenuMutation(store: AnnotationStore, presentsError: Bool) {
+        menuMutationTask?.cancel()
+        menuMutationTask = Task { [weak self, weak store] in
+            guard let self, let store else { return }
+            await store.waitForIdle()
+            guard !Task.isCancelled else { return }
+            menuMutationTask = nil
+            refreshStatusItem()
+            if let error = store.error {
+                NSSound.beep()
+                if presentsError {
+                    SessionDialogs.showMessage(annotationStoreErrorMessage(error))
+                }
+            }
+        }
     }
 
     @objc private func showStack() {
+        guard let store else { NSSound.beep(); return }
         if let stackWindow {
             NSApp.activate(ignoringOtherApps: true)
             stackWindow.makeKeyAndOrderFront(nil)
             return
         }
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 460),
+            contentRect: NSRect(x: 0, y: 0, width: 680, height: 460),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered,
             defer: false
         )
         window.title = "Annotation Stack"
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.styleMask.insert(.fullSizeContentView)
+        // An empty unified toolbar makes the title bar as tall as the header,
+        // so the traffic lights centre on the same line as its controls.
+        let toolbar = NSToolbar(identifier: "StackWindowToolbar")
+        toolbar.showsBaselineSeparator = false
+        window.toolbar = toolbar
+        window.toolbarStyle = .unified
+        window.isMovableByWindowBackground = false
         window.isReleasedWhenClosed = false
+        let hosting = NSHostingView(rootView: StackView(
+            store: store,
+            settings: settings,
+            onSelectProfile: { [weak self] profileID in
+                self?.requestProfileSelection(profileID)
+            }
+        ))
+        window.contentView = hosting
+        let fittingSize = hosting.fittingSize
+        window.setContentSize(NSSize(
+            width: max(680, fittingSize.width),
+            height: max(460, fittingSize.height)
+        ))
         window.center()
-        window.contentView = NSHostingView(rootView: StackView(store: store, settings: settings))
         window.delegate = self
         stackWindow = window
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
     }
 
+    @objc private func showQuickSwitcher() {
+        guard let store else { NSSound.beep(); return }
+        if quickSwitch == nil {
+            quickSwitch = QuickSwitchWindowController(
+                store: store,
+                onSwitch: { [weak self] sessionID in
+                    self?.switchFromQuickSwitcher(to: sessionID)
+                },
+                onDismiss: { [weak self] in self?.quickSwitch = nil }
+            )
+        }
+        quickSwitch?.show()
+    }
+
+    private func switchFromQuickSwitcher(to sessionID: UUID) {
+        enqueueMenuMutation(
+            .switchSession(sessionID: sessionID),
+            presentsError: true
+        )
+        quickSwitch?.close()
+    }
+
+    private func presentPermissionHelpForCapture() {
+        permissionState.refresh()
+        if settings.hasCompletedSetup {
+            presentAccessibilityHelper()
+        } else {
+            presentSetup()
+        }
+    }
+
+    private func presentSetup() {
+        permissionState.refresh()
+        if setupWindowController == nil {
+            setupWindowController = SetupWindowController(
+                settings: settings,
+                permissionState: permissionState,
+                onShowAccessibilityHelper: { [weak self] in
+                    self?.presentAccessibilityHelper()
+                },
+                onComplete: { [weak self] in
+                    self?.setupWindowController?.close()
+                }
+            )
+        }
+        setupWindowController?.show()
+    }
+
+    private func presentAccessibilityHelper() {
+        if accessibilityHelperWindowController == nil {
+            accessibilityHelperWindowController = AccessibilityHelperWindowController(
+                permissionState: permissionState
+            )
+        }
+        accessibilityHelperWindowController?.show()
+    }
+
     @objc private func showSettings() {
+        permissionState.refresh()
         if let settingsWindow {
             NSApp.activate(ignoringOtherApps: true)
             settingsWindow.makeKeyAndOrderFront(nil)
             return
         }
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 460, height: 400),
-            styleMask: [.titled, .closable],
+            contentRect: NSRect(origin: .zero, size: SettingsView.size),
+            styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         window.title = "Settings"
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        let toolbar = NSToolbar(identifier: "SettingsWindowToolbar")
+        toolbar.showsBaselineSeparator = false
+        window.toolbar = toolbar
+        window.toolbarStyle = .unified
+        window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
         window.center()
-        let hosting = NSHostingView(rootView: SettingsView(settings: settings))
+        let profileEditor = ProfileEditorState(settings: settings)
+        self.profileEditor = profileEditor
+        let settingsView = SettingsView(
+            settings: settings,
+            profileEditor: profileEditor,
+            permissionState: permissionState,
+            onSelectProfile: { [weak self] profileID in
+                self?.requestProfileSelection(profileID)
+            },
+            onShowAccessibilityHelper: { [weak self] in
+                self?.presentAccessibilityHelper()
+            },
+            onRunSetup: { [weak self] in
+                self?.presentSetup()
+            }
+        )
+        let hosting = NSHostingView(rootView: settingsView)
+        // The sidebar owns the title-bar band; no inset for the toolbar.
+        hosting.safeAreaRegions = []
         window.contentView = hosting
-        window.setContentSize(hosting.fittingSize)
+        window.setContentSize(SettingsView.size)
         window.delegate = self
         settingsWindow = window
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
+        // Open calmly, without the first text field selected.
+        window.makeFirstResponder(nil)
     }
 
-    /// Tuck away the stack and settings windows so a capture shows the note box
-    /// alone. They keep their contents and position; ⌃⌘S brings the stack back.
+    /// Tuck away auxiliary windows so a capture shows the note box alone.
     private func hideAuxiliaryWindows() {
-        Diag.log("hideAuxiliaryWindows stack=\(stackWindow?.isVisible ?? false) settings=\(settingsWindow?.isVisible ?? false)")
+        Diag.log("hideAuxiliaryWindows stack=\(stackWindow?.isVisible ?? false) settings=\(settingsWindow?.isVisible ?? false) quickSwitch=\(quickSwitch != nil)")
         stackWindow?.orderOut(nil)
         settingsWindow?.orderOut(nil)
+        setupWindowController?.close()
+        accessibilityHelperWindowController?.close()
+        quickSwitch?.close()
     }
 
     @objc private func quit() {
@@ -308,9 +816,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 extension AppDelegate: NSWindowDelegate {
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard sender === settingsWindow, let profileEditor else { return true }
+        return ProfileDialogs.shouldClose(profileEditor)
+    }
+
     func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
         if window === stackWindow { stackWindow = nil }
-        if window === settingsWindow { settingsWindow = nil }
+        if window === settingsWindow {
+            settingsWindow = nil
+            profileEditor = nil
+        }
     }
 }

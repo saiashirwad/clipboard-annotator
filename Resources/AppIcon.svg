@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5B5BF0"/>
+      <stop offset="1" stop-color="#3B2FB8"/>
+    </linearGradient>
+  </defs>
+  <!-- macOS icon grid: 824pt rounded square centred on a 1024pt canvas -->
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#bg)"/>
+  <!-- speech bubble -->
+  <path fill="#FFFFFF" d="M296 262 H728 A84 84 0 0 1 812 346 V598 A84 84 0 0 1 728 682 H420 L318 778 L336 682 H296 A84 84 0 0 1 212 598 V346 A84 84 0 0 1 296 262 Z"/>
+  <!-- text lines, the middle one highlighted -->
+  <rect x="292" y="356" width="440" height="42" rx="21" fill="#C9CBDD"/>
+  <rect x="280" y="437" width="372" height="70" rx="20" fill="#FFD84D"/>
+  <rect x="292" y="451" width="348" height="42" rx="21" fill="#2B2A5A"/>
+  <rect x="292" y="546" width="380" height="42" rx="21" fill="#C9CBDD"/>
+</svg>

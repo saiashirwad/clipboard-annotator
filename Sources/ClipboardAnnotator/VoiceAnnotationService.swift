@@ -3,13 +3,14 @@ import FluidAudio
 import Foundation
 
 /// Records one short clip and sends it to the same local Parakeet engine that
-/// Hex uses. The model is downloaded only when the user first makes a voice
-/// annotation. Neither the audio nor its transcript leaves the Mac.
+/// Hex uses. The model downloads only when the user asks for voice setup or
+/// first makes a voice annotation. Neither the audio nor its transcript leaves the Mac.
 @MainActor
 final class VoiceAnnotationService {
     static let shared = VoiceAnnotationService()
 
     private let transcriber = LocalVoiceTranscriber()
+    let levelMeter = VoiceLevelMeter()
     private var engine: AVAudioEngine?
     private var recordingFile: AVAudioFile?
     private var recordingURL: URL?
@@ -23,7 +24,7 @@ final class VoiceAnnotationService {
     }
 
     func isVoiceModelReady() async -> Bool {
-        await transcriber.isLoaded()
+        await transcriber.isReady()
     }
 
     func downloadVoiceModel() async throws {
@@ -66,12 +67,16 @@ final class VoiceAnnotationService {
             interleaved: false
         )
 
-        input.installTap(onBus: 0, bufferSize: 1_024, format: format) { buffer, _ in
+        let meter = levelMeter
+        meter.reset()
+        input.installTap(onBus: 0, bufferSize: 2_048, format: format) { buffer, _ in
             do {
                 try file.write(from: buffer)
             } catch {
                 Diag.log("voice audio write failed: \(error.localizedDescription)")
             }
+            let level = VoiceLevelMeter.level(of: buffer)
+            Task { @MainActor in meter.push(level) }
         }
 
         do {
@@ -91,12 +96,16 @@ final class VoiceAnnotationService {
     /// Stops the microphone before starting transcription, so its use stays
     /// limited to the time that the shortcut was held.
     func stopAndTranscribe() async throws -> String {
+        try Task.checkCancellation()
         let url = try stopRecording()
         defer { try? FileManager.default.removeItem(at: url) }
 
-        let modelIsLoaded = await transcriber.isLoaded()
-        Diag.log(modelIsLoaded ? "voice transcription started" : "voice model download started")
+        try Task.checkCancellation()
+        let modelIsReady = await transcriber.isReady()
+        try Task.checkCancellation()
+        Diag.log(modelIsReady ? "voice transcription started" : "voice model download started")
         let transcript = try await transcriber.transcribe(url: url)
+        try Task.checkCancellation()
         return transcript.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
@@ -115,6 +124,7 @@ final class VoiceAnnotationService {
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
         self.engine = nil
+        levelMeter.reset()
         recordingFile = nil // Flush the audio file before FluidAudio reads it.
         recordingURL = nil
         Diag.log("voice recording stopped")
@@ -136,10 +146,22 @@ private enum VoiceAnnotationError: LocalizedError {
     }
 }
 
-private actor LocalVoiceTranscriber {
-    private var manager: AsrManager?
+actor LocalVoiceTranscriber {
+    private let preparation = SharedAsyncPreparation<AsrManager>()
+    private let modelsAreDownloaded: @Sendable () -> Bool
 
-    func isLoaded() -> Bool { manager != nil }
+    init(modelsAreDownloaded: @escaping @Sendable () -> Bool = {
+        AsrModels.modelsExist(
+            at: AsrModels.defaultCacheDirectory(for: .v3),
+            version: .v3
+        )
+    }) {
+        self.modelsAreDownloaded = modelsAreDownloaded
+    }
+
+    func isReady() async -> Bool {
+        await preparation.isPrepared() || modelsAreDownloaded()
+    }
 
     func prepare() async throws {
         _ = try await transcriptionManager()
@@ -154,12 +176,10 @@ private actor LocalVoiceTranscriber {
     }
 
     private func transcriptionManager() async throws -> AsrManager {
-        if let manager { return manager }
-
-        // Parakeet TDT v3 is Hex's default, multilingual, on-device model.
-        let models = try await AsrModels.downloadAndLoad(version: .v3)
-        let manager = AsrManager(config: .init(), models: models)
-        self.manager = manager
-        return manager
+        try await preparation.value {
+            // Parakeet TDT v3 is Hex's default, multilingual, on-device model.
+            let models = try await AsrModels.downloadAndLoad(version: .v3)
+            return AsrManager(config: .init(), models: models)
+        }
     }
 }

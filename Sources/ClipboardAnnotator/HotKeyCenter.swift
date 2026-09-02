@@ -3,6 +3,7 @@ import Carbon.HIToolbox
 
 /// Registers system-wide shortcuts through Carbon, which works without
 /// Accessibility permission and fires even when another app is frontmost.
+@MainActor
 final class HotKeyCenter {
     static let shared = HotKeyCenter()
 
@@ -111,7 +112,8 @@ private func hotKeyEventHandler(
         nil, MemoryLayout<EventHotKeyID>.size, nil, &id
     )
     guard status == noErr else { return status }
+    let hotKeyID = id.id
     let kind = GetEventKind(event)
-    DispatchQueue.main.async { HotKeyCenter.shared.fire(id: id.id, kind: kind) }
+    DispatchQueue.main.async { HotKeyCenter.shared.fire(id: hotKeyID, kind: kind) }
     return noErr
 }
