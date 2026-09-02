@@ -48,7 +48,11 @@ fi
 # build behaves exactly like the notarized one. Only real identities can carry
 # a secure timestamp, which notarization requires.
 SIGN_FLAGS=(--force --options runtime --entitlements "$ENTITLEMENTS" --identifier "$BUNDLE_ID")
-if [ -n "$IDENTITY" ]; then
+if [ "$IDENTITY" = "-" ]; then
+    echo "==> Signing ad-hoc"
+    echo "    (macOS will ask users to approve this build before opening it)"
+    codesign "${SIGN_FLAGS[@]}" --sign - "${DIST}"
+elif [ -n "$IDENTITY" ]; then
     echo "==> Signing with: ${IDENTITY}"
     codesign "${SIGN_FLAGS[@]}" --timestamp --sign "$IDENTITY" "${DIST}"
 else

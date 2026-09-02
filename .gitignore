@@ -1,4 +1,5 @@
 .build/
 dist/
+.wrangler/
 .DS_Store
 *.xcodeproj

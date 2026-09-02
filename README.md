@@ -20,6 +20,11 @@ Download the latest zip from [Releases](../../releases), unzip it, and drag
 **Clipboard Annotator** into `/Applications`. Open it and look for the
 speech-bubble icon in the menu bar.
 
+The current builds are ad-hoc signed and are not notarized by Apple. On the
+first launch, macOS may block the app. Try to open it once, then open **System
+Settings > Privacy & Security**, scroll to **Security**, click **Open Anyway**,
+and confirm **Open**. Only do this if you trust this repository.
+
 The setup assistant asks for:
 
 - **Accessibility.** Required. It reads your selection and sends the paste
