@@ -560,6 +560,8 @@
       for (const d of cur) d.remove();
     };
 
+    addEventListener("resize", () => unhighlight(true));
+
     const scrollToSel = async (sel) => {
       const target = Math.max(0, sel.offsetTop - msgs.clientHeight * 0.32);
       if (Math.abs(target - msgs.scrollTop) > 24) {
