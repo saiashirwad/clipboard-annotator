@@ -1,6 +1,6 @@
 import Foundation
 import XCTest
-@testable import ClipboardAnnotatorDomain
+@testable import SendpointDomain
 
 final class ProvenanceParsingTests: XCTestCase {
     func testGhosttyFileURLAcceptsAndStandardizesOnlySafeLocalLocations() {

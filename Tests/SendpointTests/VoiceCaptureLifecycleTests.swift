@@ -1,5 +1,5 @@
 import XCTest
-@testable import ClipboardAnnotator
+@testable import Sendpoint
 
 final class VoiceCaptureLifecycleTests: XCTestCase {
     private func identity(_ value: UInt8 = 1) -> VoiceCaptureIdentity {

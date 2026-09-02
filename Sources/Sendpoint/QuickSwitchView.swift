@@ -1,5 +1,5 @@
 import AppKit
-import ClipboardAnnotatorDomain
+import SendpointDomain
 import SwiftUI
 
 /// State for the session palette, owned by its window controller so the key

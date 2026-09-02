@@ -1,4 +1,4 @@
-# Clipboard Annotator: Sessions, Provenance, and Prompt Profiles
+# Sendpoint: Sessions, Provenance, and Prompt Profiles
 
 ## Status
 
@@ -16,7 +16,7 @@ This specification makes five deliberate refinements to the earlier sketch. They
 
 ## Product statement
 
-Clipboard Annotator should let a person keep reading without opening a side investigation. They select a passage or capture a standalone thought, speak or type a note, and keep going. The app records where the thought came from. Later, it turns the active session into a shaped prompt and copies or pastes it into another app.
+Sendpoint should let a person keep reading without opening a side investigation. They select a passage or capture a standalone thought, speak or type a note, and keep going. The app records where the thought came from. Later, it turns the active session into a shaped prompt and copies or pastes it into another app.
 
 The core loop is:
 
@@ -274,7 +274,7 @@ struct StoreDocument: Codable {
 Persist one `StoreDocument` as JSON at:
 
 ```text
-~/Library/Application Support/ClipboardAnnotator/store.json
+~/Library/Application Support/Sendpoint/store.json
 ```
 
 Requirements:
@@ -365,7 +365,7 @@ Do not add Chrome, Safari, Arc, iTerm, Terminal, or kitty-specific enrichers in 
 
 Provenance must never delay panel presentation or recording.
 
-1. At shortcut time, capture the target application's identity and process identifier before activating any Clipboard Annotator panel.
+1. At shortcut time, capture the target application's identity and process identifier before activating any Sendpoint panel.
 2. Set `Annotation.createdAt` at that moment.
 3. Create one provenance `Task` owned by that capture lifecycle. Never use `Task.detached`.
 4. Present the note or voice UI without awaiting the task.
@@ -414,7 +414,7 @@ Some TCC grants require manual work in System Settings. When the app opens the A
 
 - Name the exact permission.
 - Give no more than three concrete steps.
-- Show the Clipboard Annotator app icon/name where useful.
+- Show the Sendpoint app icon/name where useful.
 - Poll or refresh the real grant status.
 - Close itself when access is granted.
 - Offer a manual close action.
@@ -487,7 +487,7 @@ TCA would provide real benefits: reducers make state transitions explicit, effec
 
 The cost is disproportionate here:
 
-- Clipboard Annotator is a small menu-bar app with a few state owners, two panels, and limited navigation.
+- Sendpoint is a small menu-bar app with a few state owners, two panels, and limited navigation.
 - A coherent TCA adoption would replace the store, capture controller, AppDelegate event routing, view bindings, asynchronous tasks, dependency access, and tests. Using TCA for only voice or provenance would leave two state architectures in one small codebase.
 - The current TCA release at review time (`1.26.2`) declares `swift-tools-version: 6.4`, while the installed toolchain is Swift `6.3.3`. Adoption would require a toolchain upgrade or pinning an older release such as `1.25.2`.
 - TCA brings a broad dependency graph, including collections, schedulers, case paths, clocks, concurrency helpers, custom dump, dependency management, identified collections, issue reporting, navigation, perception, sharing, and macro/SwiftSyntax targets. That works against the stated fast-build priority.
@@ -735,7 +735,7 @@ Own the lifecycle connection among selection capture, session snapshot, annotati
 - `PermissionState.swift` — observable permission values and refresh/request orchestration.
 - `SetupView.swift` — first-run setup checklist.
 - `PermissionHelpWindow.swift` — focused instructions shown alongside System Settings.
-- Test files under a new `Tests/ClipboardAnnotatorTests` target.
+- Test files under a new `Tests/SendpointTests` target.
 
 Do not split tiny related types into separate files merely to satisfy this list. A cohesive `Models.swift` is acceptable if it stays easy to scan. Prefer the repository's existing simple structure over a new folder hierarchy.
 

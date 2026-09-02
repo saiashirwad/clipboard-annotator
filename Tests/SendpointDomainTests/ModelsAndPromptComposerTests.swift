@@ -1,7 +1,7 @@
 import Foundation
 import XCTest
 
-@testable import ClipboardAnnotatorDomain
+@testable import SendpointDomain
 
 final class ModelsAndPromptComposerTests: XCTestCase {
     private let date = Date(timeIntervalSince1970: 1_735_831_440)

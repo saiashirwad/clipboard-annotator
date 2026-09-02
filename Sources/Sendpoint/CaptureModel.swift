@@ -1,4 +1,4 @@
-import ClipboardAnnotatorDomain
+import SendpointDomain
 import Foundation
 import Observation
 
@@ -54,7 +54,7 @@ enum CaptureAnnotationPolicy {
     static func annotation(
         for target: AnnotationCaptureTarget,
         note: String
-    ) -> ClipboardAnnotatorDomain.Annotation? {
+    ) -> SendpointDomain.Annotation? {
         guard let note = note.nonblank else { return nil }
 
         let subject: Subject
@@ -64,7 +64,7 @@ enum CaptureAnnotationPolicy {
             subject = .standalone
         }
 
-        return ClipboardAnnotatorDomain.Annotation(
+        return SendpointDomain.Annotation(
             id: target.annotationID,
             subject: subject,
             note: note,
@@ -92,7 +92,7 @@ enum CaptureSavePhase: Equatable, Sendable {
 
 struct CaptureSaveRequest: Equatable, Sendable {
     let identity: CaptureSaveIdentity
-    let annotation: ClipboardAnnotatorDomain.Annotation
+    let annotation: SendpointDomain.Annotation
 }
 
 enum CaptureSaveOutcomeAction: Equatable, Sendable {
@@ -125,7 +125,7 @@ final class CaptureModel {
         }
     }
     private(set) var savePhase: CaptureSavePhase = .editing
-    private(set) var annotation: ClipboardAnnotatorDomain.Annotation?
+    private(set) var annotation: SendpointDomain.Annotation?
 
     let target: AnnotationCaptureTarget
 
@@ -146,7 +146,7 @@ final class CaptureModel {
     }
 
     func beginCommit(
-        annotation: ClipboardAnnotatorDomain.Annotation,
+        annotation: SendpointDomain.Annotation,
         destinationSessionID: UUID
     ) -> CaptureSaveRequest? {
         guard case .editing = savePhase,
@@ -255,7 +255,7 @@ final class CaptureModel {
     }
 
     private func request(
-        annotation: ClipboardAnnotatorDomain.Annotation,
+        annotation: SendpointDomain.Annotation,
         destinationSessionID: UUID
     ) -> CaptureSaveRequest {
         CaptureSaveRequest(

@@ -5,15 +5,15 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>Clipboard Annotator</string>
+	<string>Sendpoint</string>
 	<key>CFBundleExecutable</key>
-	<string>ClipboardAnnotator</string>
+	<string>Sendpoint</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.texoport.ClipboardAnnotator</string>
+	<string>app.sendpoint</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>Clipboard Annotator</string>
+	<string>Sendpoint</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -27,11 +27,11 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>Clipboard Annotator asks your browser for the active tab’s title and URL so a note records where it came from.</string>
+	<string>Sendpoint asks your browser for the active tab’s title and URL so a note records where it came from.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Clipboard Annotator records your voice to make a voice annotation.</string>
+	<string>Sendpoint records your voice to make a voice annotation.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

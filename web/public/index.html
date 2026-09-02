@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sendpoint — Think out loud while you read</title>
-  <meta name="description" content="A Mac menu bar app. Select a passage in any app, say or type what you're thinking, keep reading. One shortcut turns the whole train of thought into a prompt.">
+  <meta name="description" content="A Mac menu bar app. Select a passage, say what you're thinking, keep reading. One shortcut sends the whole train of thought as a prompt.">
   <meta property="og:title" content="Sendpoint">
   <meta property="og:description" content="Think out loud while you read. Send the whole train of thought.">
   <meta property="og:url" content="https://sendpoint.app/">
@@ -22,6 +22,7 @@
       --accent-fg: #ffffff;
       --mark: #ffd84d;
       --mark-fg: #2b2a5a;
+      --rec: #e5484d;
       --radius: 12px;
       color-scheme: light dark;
     }
@@ -37,6 +38,7 @@
         --accent-fg: #0f0f13;
         --mark: #e6c23a;
         --mark-fg: #1a1a2e;
+        --rec: #ff6b6b;
       }
     }
 
@@ -53,32 +55,10 @@
     }
     a { color: inherit; text-decoration: none; }
     p { margin: 0 0 1em; }
-    h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.02em; line-height: 1.15; }
-    h1 { font-size: clamp(2.2rem, 6vw, 3.6rem); }
-    h2 { font-size: 1.6rem; margin-bottom: 0.6em; }
-    h3 { font-size: 1.05rem; margin-bottom: 0.3em; }
-    code, pre, kbd {
-      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-      font-size: 0.92em;
-    }
-    kbd {
-      display: inline-block;
-      padding: 0.1em 0.45em;
-      border: 1px solid var(--line);
-      border-bottom-width: 2px;
-      border-radius: 6px;
-      background: var(--bg-2);
-      font-size: 0.85em;
-      line-height: 1.4;
-      white-space: nowrap;
-    }
+    h1 { margin: 0; font-weight: 600; letter-spacing: -0.025em; line-height: 1.08; font-size: clamp(2.3rem, 6vw, 3.8rem); }
 
     .wrap { max-width: 1040px; margin: 0 auto; padding: 0 24px; }
-    .narrow { max-width: 680px; }
-    section { padding: 72px 0; }
-    section + section { border-top: 1px solid var(--line); }
 
-    /* nav */
     nav {
       display: flex; align-items: center; justify-content: space-between;
       padding: 20px 0;
@@ -88,13 +68,9 @@
     nav .links { display: flex; gap: 22px; font-size: 0.95rem; color: var(--fg-2); }
     nav .links a:hover { color: var(--fg); }
 
-    /* hero */
-    .hero { padding: 64px 0 56px; }
-    .hero .lede {
-      font-size: 1.25rem; color: var(--fg-2); max-width: 620px;
-      margin: 1.2em 0 1.8em;
-    }
-    .actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+    .hero { padding: 56px 0 24px; text-align: center; }
+    .hero .lede { font-size: 1.2rem; color: var(--fg-2); margin: 1em auto 1.6em; max-width: 520px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: center; }
     .btn {
       display: inline-flex; align-items: center; gap: 8px;
       padding: 12px 20px; border-radius: 10px;
@@ -109,80 +85,179 @@
     .btn.primary:hover { filter: brightness(1.08); }
     .fine { font-size: 0.9rem; color: var(--fg-3); margin-top: 14px; }
 
-    /* demo */
-    .demo {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
-      align-items: start;
-      margin-top: 8px;
-    }
-    .pane {
+    /* ---------- animated scene ---------- */
+    .scene-wrap { padding: 32px 0 80px; }
+    .scene {
+      position: relative;
       background: var(--bg-2);
       border: 1px solid var(--line);
-      border-radius: var(--radius);
+      border-radius: 16px;
+      overflow: hidden;
+      font-size: clamp(11px, 1.35vw, 14px);
+      line-height: 1.5;
+      user-select: none;
+    }
+    .menubar {
+      display: flex; align-items: center; justify-content: flex-end; gap: 1.2em;
+      height: 2.4em; padding: 0 1.2em;
+      border-bottom: 1px solid var(--line);
+      background: var(--bg);
+      color: var(--fg-3); font-size: 0.85em;
+    }
+    .menubar .item { display: flex; align-items: center; gap: 0.4em; }
+    .menubar .item img { width: 1.35em; height: 1.35em; }
+    .menubar .badge {
+      min-width: 1.5em; height: 1.5em; padding: 0 0.4em;
+      border-radius: 1em; background: var(--accent); color: var(--accent-fg);
+      font-weight: 600; font-size: 0.85em;
+      display: inline-flex; align-items: center; justify-content: center;
+      transform: scale(0); transition: transform 0.25s cubic-bezier(.2,1.4,.5,1);
+    }
+    .menubar .badge.on { transform: scale(1); }
+    .menubar .badge.bump { animation: bump 0.35s ease; }
+    @keyframes bump { 40% { transform: scale(1.35); } }
+
+    .desk {
+      display: grid; grid-template-columns: 1.15fr 1fr; gap: 1.4em;
+      padding: 1.4em;
+      min-height: 26em;
+    }
+    .win {
+      position: relative;
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: 10px;
       overflow: hidden;
       display: flex; flex-direction: column;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.04);
     }
-    .pane .bar {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 10px 14px;
-      font-size: 0.8rem; color: var(--fg-3);
+    .win .bar {
+      display: flex; align-items: center; gap: 0.6em;
+      padding: 0.6em 0.9em;
       border-bottom: 1px solid var(--line);
+      color: var(--fg-3); font-size: 0.85em;
     }
-    .pane .bar .dots { display: flex; gap: 6px; }
-    .pane .bar .dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--line); display: block; }
-    .pane .body { padding: 16px; flex: 1; }
-    .quote {
-      background: var(--bg);
+    .dots { display: flex; gap: 0.4em; }
+    .dots i { width: 0.7em; height: 0.7em; border-radius: 50%; background: var(--line); display: block; }
+    .win .bar .title { flex: 1; text-align: center; margin-right: 2.6em; }
+
+    .reader { padding: 1.2em 1.3em; color: var(--fg-2); flex: 1; }
+    .reader p { margin: 0 0 0.8em; }
+    .reader .h { color: var(--fg); font-weight: 600; margin-bottom: 0.6em; }
+    .sel {
+      background-image: linear-gradient(var(--mark), var(--mark));
+      background-repeat: no-repeat;
+      background-size: 0% 100%;
+      transition: background-size 0.55s ease;
+      color: inherit;
+      border-radius: 2px;
+      -webkit-box-decoration-break: clone; box-decoration-break: clone;
+    }
+    .sel.on { background-size: 100% 100%; color: var(--mark-fg); }
+
+    /* capture panel floating over the reader */
+    .panel {
+      position: absolute; left: 1em; right: 1em; bottom: 1em;
+      background: var(--bg-2);
       border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 10px 12px;
-      font-size: 0.95rem;
-      color: var(--fg-2);
-      margin-bottom: 12px;
+      border-radius: 10px;
+      padding: 0.8em;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.12);
+      opacity: 0; transform: translateY(10px) scale(0.98);
+      transition: opacity 0.22s ease, transform 0.22s ease;
+      pointer-events: none;
     }
-    .quote mark { background: var(--mark); color: var(--mark-fg); border-radius: 3px; padding: 0 2px; }
-    .note {
-      background: var(--bg);
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 10px 12px;
-      min-height: 84px;
-      font-size: 0.95rem;
+    .panel.on { opacity: 1; transform: none; }
+    .panel.out { opacity: 0; transform: translateY(-40px) scale(0.6); transition: opacity 0.3s ease, transform 0.35s cubic-bezier(.4,0,.8,.4); }
+    .panel .q {
+      font-size: 0.92em; color: var(--fg-2);
+      background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
+      padding: 0.5em 0.7em; margin-bottom: 0.6em;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
     }
-    .note .caret { display: inline-block; width: 1px; height: 1.1em; background: var(--fg); vertical-align: -0.2em; margin-left: 1px; animation: blink 1s steps(1) infinite; }
-    @keyframes blink { 50% { opacity: 0; } }
-    .pane .foot {
-      padding: 10px 16px;
-      font-size: 0.8rem; color: var(--fg-3);
-      border-top: 1px solid var(--line);
-      display: flex; justify-content: space-between;
+    .panel .n {
+      min-height: 3.4em;
+      background: var(--bg); border: 1px solid var(--line); border-radius: 6px;
+      padding: 0.5em 0.7em; color: var(--fg);
     }
-    pre.out {
-      margin: 0; padding: 16px;
-      white-space: pre-wrap; word-wrap: break-word;
-      font-size: 0.82rem; line-height: 1.55;
-      color: var(--fg-2);
-      flex: 1;
+    .panel .n .ph { color: var(--fg-3); }
+    .panel .n .w { opacity: 0; transition: opacity 0.18s ease; }
+    .panel .n .w.on { opacity: 1; }
+    .panel .foot { display: flex; align-items: center; justify-content: space-between; margin-top: 0.6em; font-size: 0.82em; color: var(--fg-3); }
+    .mic {
+      display: inline-flex; align-items: center; gap: 0.5em;
+      padding: 0.25em 0.6em; border-radius: 1em;
+      background: var(--bg); border: 1px solid var(--line);
+      color: var(--fg-3);
+      transition: color 0.2s, border-color 0.2s;
     }
-    pre.out b { color: var(--fg); font-weight: 600; }
-    pre.out .q { color: var(--fg-3); }
-    pre.out .n { color: var(--fg); }
-    pre.out .m { color: var(--fg-3); font-style: italic; }
-    .caption { font-size: 0.9rem; color: var(--fg-3); margin-top: 14px; }
+    .mic .dot { width: 0.6em; height: 0.6em; border-radius: 50%; background: var(--fg-3); }
+    .mic .bars { display: none; gap: 0.15em; align-items: center; height: 1em; }
+    .mic .bars i { width: 0.2em; height: 0.3em; background: var(--rec); border-radius: 1px; display: block; }
+    .mic.rec { color: var(--rec); border-color: var(--rec); }
+    .mic.rec .dot { display: none; }
+    .mic.rec .bars { display: inline-flex; }
+    .mic.rec .bars i { animation: lvl 0.6s ease-in-out infinite; }
+    .mic.rec .bars i:nth-child(2) { animation-delay: 0.1s; }
+    .mic.rec .bars i:nth-child(3) { animation-delay: 0.2s; }
+    .mic.rec .bars i:nth-child(4) { animation-delay: 0.05s; }
+    .mic.rec .bars i:nth-child(5) { animation-delay: 0.15s; }
+    @keyframes lvl { 0%,100% { height: 0.3em; } 50% { height: 1em; } }
+
+    /* chat window */
+    .chat { display: flex; flex-direction: column; flex: 1; }
+    .chat .msgs { flex: 1; padding: 1em; display: flex; flex-direction: column; gap: 0.7em; justify-content: flex-end; }
+    .chat .bubble {
+      align-self: flex-end; max-width: 92%;
+      background: var(--accent); color: var(--accent-fg);
+      border-radius: 12px 12px 3px 12px;
+      padding: 0.6em 0.8em;
+      font-size: 0.88em; line-height: 1.45;
+      opacity: 0; transform: translateY(8px);
+      transition: opacity 0.25s ease, transform 0.25s ease;
+      white-space: pre-wrap;
+    }
+    .chat .bubble.on { opacity: 1; transform: none; }
+    .chat .bubble .dim { opacity: 0.7; }
+    .chat .reply {
+      align-self: flex-start; color: var(--fg-3); font-size: 0.88em;
+      opacity: 0; transition: opacity 0.3s ease; padding: 0 0.2em;
+    }
+    .chat .reply.on { opacity: 1; }
+    .chat .reply i { display: inline-block; width: 0.45em; height: 0.45em; border-radius: 50%; background: var(--fg-3); margin-right: 0.2em; animation: pulse 1s ease-in-out infinite; }
+    .chat .reply i:nth-child(2) { animation-delay: 0.15s; }
+    .chat .reply i:nth-child(3) { animation-delay: 0.3s; }
+    @keyframes pulse { 50% { opacity: 0.3; } }
+    .chat .composer {
+      margin: 0 1em 1em;
+      border: 1px solid var(--line); border-radius: 10px;
+      background: var(--bg-2);
+      padding: 0.6em 0.8em;
+      min-height: 3.2em; max-height: 11em; overflow: hidden;
+      font-size: 0.85em; line-height: 1.45; color: var(--fg-2);
+      white-space: pre-wrap;
+      transition: border-color 0.2s;
+    }
+    .chat .composer .ph { color: var(--fg-3); }
+    .chat .composer.flash { border-color: var(--accent); }
+    .chat .composer b { color: var(--fg); font-weight: 600; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .scene * { transition: none !important; animation: none !important; }
+    }
+    @media (max-width: 760px) {
+      .desk { grid-template-columns: 1fr; min-height: 0; }
+      .scene { font-size: 12px; }
+      .hero { padding-top: 36px; }
+    }
 
     footer {
-      padding: 40px 0 56px;
+      padding: 32px 0 48px;
       border-top: 1px solid var(--line);
       font-size: 0.9rem; color: var(--fg-3);
       display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between;
     }
     footer a:hover { color: var(--fg); }
-
-    @media (max-width: 800px) {
-      section { padding: 56px 0; }
-      .demo { grid-template-columns: 1fr; }
-      .hero { padding-top: 40px; }
-    }
   </style>
 </head>
 <body>
@@ -193,7 +268,7 @@
         Sendpoint
       </a>
       <div class="links">
-        <a href="https://github.com/saiashirwad/clipboard-annotator">GitHub</a>
+        <a href="https://github.com/saiashirwad/sendpoint">GitHub</a>
       </div>
     </nav>
   </div>
@@ -201,66 +276,168 @@
   <header class="hero">
     <div class="wrap">
       <h1>Think out loud<br>while you read.</h1>
-      <p class="lede">
-        Sendpoint is a Mac menu bar app. Select a passage in any app, say or type
-        what you're thinking, and keep reading. When you reach the end, one shortcut
-        turns the whole train of thought into a prompt and pastes it into whatever
-        model you're talking to.
-      </p>
+      <p class="lede">Select a passage, say what you're thinking, keep going. Send the whole train of thought as one prompt.</p>
       <div class="actions">
         <a class="btn primary" href="/download">Download for Mac</a>
-        <a class="btn" href="https://github.com/saiashirwad/clipboard-annotator">View on GitHub</a>
+        <a class="btn" href="https://github.com/saiashirwad/sendpoint">View on GitHub</a>
       </div>
       <p class="fine">macOS 14 or later, Apple Silicon. Free.</p>
     </div>
   </header>
 
-  <section>
+  <div class="scene-wrap">
     <div class="wrap">
-      <div class="demo">
-        <div class="pane">
-          <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span>Capture</span><span></span></div>
-          <div class="body">
-            <div class="quote">
-              Because the closure captures the environment at definition time, a CEK
-              machine never substitutes. It <mark>extends the environment</mark> instead.
-            </div>
-            <div class="note">wait, doesn't the environment grow forever then? when does anything get pruned<span class="caret"></span></div>
-          </div>
-          <div class="foot"><span>Helium · CEK machines</span><span><kbd>⌘↩</kbd> save</span></div>
+      <div class="scene" id="scene" aria-hidden="true">
+        <div class="menubar">
+          <div class="item"><img src="/icon.svg" alt=""><span class="badge" id="badge">0</span></div>
+          <div class="item">Wed 2:14 PM</div>
         </div>
-        <div class="pane">
-          <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span>Pasted prompt</span><span></span></div>
-<pre class="out">These are my reading notes, captured in order while I read. Each entry is either a response to a quoted passage or a standalone thought. Read the notes as a whole and give me one coherent response that takes all of them into account.
-
-<b># Reading notes — September 2, 2026</b>
-
-<b>## 1</b>
-
-<span class="q">&gt; Because the closure captures the environment at
-&gt; definition time, a CEK machine never substitutes.
-&gt; It extends the environment instead.</span>
-
-<span class="n">wait, doesn't the environment grow forever then? when does anything get pruned</span>
-
-<span class="m">_Helium · CEK machines · https://… · 2:14 PM_</span>
-
-<b>## 2</b>
-
-<span class="n">I think I'm mixing up the environment with the continuation. Which one is the "stack" here?</span>
-
-<span class="m">_Helium · 2:16 PM_</span></pre>
+        <div class="desk">
+          <div class="win">
+            <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="title">CEK machines</span></div>
+            <div class="reader">
+              <p class="h">How a CEK machine handles closures</p>
+              <p><span class="sel" id="s1">Because the closure captures the environment at definition time, a CEK machine never substitutes. It extends the environment instead.</span></p>
+              <p><span class="sel" id="s2">The continuation is a separate stack of frames. Each frame records what to do with the value once it arrives.</span></p>
+              <p>Lookups walk the environment chain until they find the binding. In practice, the chain stays short because most closures are created in shallow scopes.</p>
+            </div>
+            <div class="panel" id="panel">
+              <div class="q" id="pq"></div>
+              <div class="n" id="pn"><span class="ph">Hold to talk…</span></div>
+              <div class="foot"><span class="mic" id="mic"><span class="dot"></span><span class="bars"><i></i><i></i><i></i><i></i><i></i></span><span id="micl">Ready</span></span><span id="pstat"></span></div>
+            </div>
+          </div>
+          <div class="win chat">
+            <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span class="title">Chat</span></div>
+            <div class="msgs">
+              <div class="bubble" id="bubble"></div>
+              <div class="reply" id="reply"><i></i><i></i><i></i></div>
+            </div>
+            <div class="composer" id="composer"><span class="ph">Message…</span></div>
+          </div>
         </div>
       </div>
-      <p class="caption">Left: the capture panel. Right: what gets pasted.</p>
     </div>
-  </section>
+  </div>
 
   <div class="wrap">
     <footer>
       <span>Sendpoint. Everything stays on your Mac.</span>
-      <span><a href="https://github.com/saiashirwad/clipboard-annotator">Source on GitHub</a> · <a href="https://github.com/saiashirwad/clipboard-annotator/releases">Releases</a></span>
+      <span><a href="https://github.com/saiashirwad/sendpoint">Source on GitHub</a> · <a href="https://github.com/saiashirwad/sendpoint/releases">Releases</a></span>
     </footer>
   </div>
+
+  <script>
+  (() => {
+    const $ = (id) => document.getElementById(id);
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    const notes = [
+      { sel: "s1", words: "wait, doesn't the environment grow forever then? when does anything get pruned" },
+      { sel: "s2", words: "so is the continuation the stack, or is the environment the stack? I keep mixing these up" },
+    ];
+
+    const badge = $("badge"), panel = $("panel"), pq = $("pq"), pn = $("pn"),
+          mic = $("mic"), micl = $("micl"), pstat = $("pstat"),
+          composer = $("composer"), bubble = $("bubble"), reply = $("reply");
+
+    const setBadge = (n) => {
+      badge.textContent = n;
+      badge.classList.toggle("on", n > 0);
+      if (n > 0) { badge.classList.remove("bump"); void badge.offsetWidth; badge.classList.add("bump"); }
+    };
+
+    const reset = () => {
+      for (const id of ["s1", "s2"]) $(id).classList.remove("on");
+      panel.className = "panel";
+      pq.textContent = "";
+      pn.innerHTML = '<span class="ph">Hold to talk…</span>';
+      mic.className = "mic"; micl.textContent = "Ready"; pstat.textContent = "";
+      composer.innerHTML = '<span class="ph">Message…</span>';
+      composer.classList.remove("flash");
+      bubble.className = "bubble"; bubble.textContent = "";
+      reply.className = "reply";
+      setBadge(0);
+    };
+
+    const capture = async (note, count) => {
+      const sel = $(note.sel);
+      sel.classList.add("on");
+      await sleep(800);
+
+      pq.textContent = sel.textContent;
+      pn.innerHTML = '<span class="ph">Hold to talk…</span>';
+      panel.className = "panel on";
+      await sleep(700);
+
+      mic.classList.add("rec"); micl.textContent = "Listening";
+      pn.innerHTML = "";
+      await sleep(350);
+
+      const words = note.words.split(" ");
+      for (const w of words) {
+        const span = document.createElement("span");
+        span.className = "w";
+        span.textContent = w + " ";
+        pn.appendChild(span);
+        void span.offsetWidth;
+        span.classList.add("on");
+        await sleep(110 + Math.random() * 90);
+      }
+      await sleep(350);
+
+      mic.classList.remove("rec"); micl.textContent = "Saved";
+      pstat.textContent = "";
+      await sleep(500);
+
+      panel.className = "panel out";
+      await sleep(120);
+      setBadge(count);
+      sel.classList.remove("on");
+      await sleep(600);
+    };
+
+    const send = () => {
+      const body = notes.map((n, i) =>
+        `<b>## ${i + 1}</b>\n> ${$(n.sel).textContent}\n\n${n.words}`
+      ).join("\n\n");
+      composer.innerHTML = `These are my reading notes, captured in order while I read. Give me one coherent response that takes all of them into account.\n\n${body}`;
+      composer.classList.add("flash");
+    };
+
+    const run = async () => {
+      if (reduced) {
+        setBadge(notes.length);
+        bubble.textContent = "These are my reading notes, captured in order while I read…";
+        bubble.classList.add("on");
+        return;
+      }
+      for (;;) {
+        reset();
+        await sleep(900);
+        let count = 0;
+        for (const note of notes) {
+          count += 1;
+          await capture(note, count);
+        }
+        await sleep(400);
+        send();
+        await sleep(1400);
+
+        composer.classList.remove("flash");
+        composer.innerHTML = '<span class="ph">Message…</span>';
+        bubble.innerHTML = `These are my reading notes, captured in order while I read. Give me one coherent response…\n\n<span class="dim">## 1 · </span>${notes[0].words}\n<span class="dim">## 2 · </span>${notes[1].words}`;
+        bubble.classList.add("on");
+        setBadge(0);
+        await sleep(700);
+        reply.classList.add("on");
+        await sleep(2600);
+      }
+    };
+
+    run();
+  })();
+  </script>
 </body>
 </html>

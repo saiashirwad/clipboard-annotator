@@ -1,5 +1,5 @@
 import XCTest
-@testable import ClipboardAnnotator
+@testable import Sendpoint
 
 @MainActor
 final class PermissionStateTests: XCTestCase {

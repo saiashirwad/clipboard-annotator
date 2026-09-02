@@ -1,6 +1,6 @@
 import AppKit
 import ApplicationServices
-import ClipboardAnnotatorDomain
+import SendpointDomain
 import Foundation
 
 struct CapturedApplication: Hashable, Sendable {

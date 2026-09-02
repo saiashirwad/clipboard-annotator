@@ -1,6 +1,6 @@
 import Foundation
 import XCTest
-@testable import ClipboardAnnotatorDomain
+@testable import SendpointDomain
 
 @MainActor
 final class AnnotationStoreTests: XCTestCase {

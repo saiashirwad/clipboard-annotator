@@ -41,7 +41,7 @@ public struct StorePersistence: Sendable {
         let baseDirectory = directory ?? FileManager.default.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
-        )[0].appendingPathComponent("ClipboardAnnotator", isDirectory: true)
+        )[0].appendingPathComponent("Sendpoint", isDirectory: true)
         let storage = AtomicJSONStore(directory: baseDirectory, now: now)
         return StorePersistence(
             load: { try await storage.load() },

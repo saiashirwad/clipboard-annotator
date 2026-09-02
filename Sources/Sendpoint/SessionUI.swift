@@ -1,5 +1,5 @@
 import AppKit
-import ClipboardAnnotatorDomain
+import SendpointDomain
 import Foundation
 
 struct SessionItemFacts: Equatable, Identifiable {

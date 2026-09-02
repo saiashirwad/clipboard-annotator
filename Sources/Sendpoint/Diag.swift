@@ -1,16 +1,16 @@
 import Foundation
 
-/// Appends to ~/Library/Application Support/ClipboardAnnotator/debug.log.
+/// Appends to ~/Library/Application Support/Sendpoint/debug.log.
 /// Unified logging swallows too much for a menu-bar agent; a plain file does not.
 /// Once per launch, a log past `maxBytes` is moved aside to debug.log.1, so the
 /// pair never grows beyond roughly twice that.
 enum Diag {
-    private static let queue = DispatchQueue(label: "com.texoport.ClipboardAnnotator.diag")
+    private static let queue = DispatchQueue(label: "app.sendpoint.diag")
     private static let maxBytes = 2_000_000
 
     static let fileURL: URL = {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("ClipboardAnnotator", isDirectory: true)
+            .appendingPathComponent("Sendpoint", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let url = dir.appendingPathComponent("debug.log")
         rotateIfLarge(url)

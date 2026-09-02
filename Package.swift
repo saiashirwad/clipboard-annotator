@@ -2,16 +2,16 @@
 import PackageDescription
 
 let package = Package(
-    name: "ClipboardAnnotator",
+    name: "Sendpoint",
     platforms: [.macOS(.v14)],
     products: [
         .library(
-            name: "ClipboardAnnotatorDomain",
-            targets: ["ClipboardAnnotatorDomain"]
+            name: "SendpointDomain",
+            targets: ["SendpointDomain"]
         ),
         .executable(
-            name: "ClipboardAnnotator",
-            targets: ["ClipboardAnnotator"]
+            name: "Sendpoint",
+            targets: ["Sendpoint"]
         ),
     ],
     dependencies: [
@@ -20,23 +20,23 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "ClipboardAnnotatorDomain",
-            path: "Sources/ClipboardAnnotatorDomain"
+            name: "SendpointDomain",
+            path: "Sources/SendpointDomain"
         ),
         .executableTarget(
-            name: "ClipboardAnnotator",
-            dependencies: ["ClipboardAnnotatorDomain", "FluidAudio"],
-            path: "Sources/ClipboardAnnotator"
+            name: "Sendpoint",
+            dependencies: ["SendpointDomain", "FluidAudio"],
+            path: "Sources/Sendpoint"
         ),
         .testTarget(
-            name: "ClipboardAnnotatorDomainTests",
-            dependencies: ["ClipboardAnnotatorDomain"],
-            path: "Tests/ClipboardAnnotatorDomainTests"
+            name: "SendpointDomainTests",
+            dependencies: ["SendpointDomain"],
+            path: "Tests/SendpointDomainTests"
         ),
         .testTarget(
-            name: "ClipboardAnnotatorTests",
-            dependencies: ["ClipboardAnnotator", "ClipboardAnnotatorDomain"],
-            path: "Tests/ClipboardAnnotatorTests"
+            name: "SendpointTests",
+            dependencies: ["Sendpoint", "SendpointDomain"],
+            path: "Tests/SendpointTests"
         ),
     ]
 )

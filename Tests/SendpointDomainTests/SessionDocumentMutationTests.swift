@@ -1,6 +1,6 @@
 import Foundation
 import XCTest
-@testable import ClipboardAnnotatorDomain
+@testable import SendpointDomain
 
 final class SessionDocumentMutationTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_700_000_000)

@@ -27,7 +27,7 @@ struct SetupView: View {
                     .scaledToFit()
                     .frame(width: 72, height: 72)
                     .accessibilityHidden(true)
-                Text("Set Up Clipboard Annotator")
+                Text("Set Up Sendpoint")
                     .font(.largeTitle.weight(.semibold))
                 Text("Capture selected text from any app. Accessibility enables capture; voice is optional.")
                     .foregroundStyle(.secondary)
@@ -312,7 +312,7 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "Set Up Clipboard Annotator"
+        window.title = "Set Up Sendpoint"
         window.isReleasedWhenClosed = false
         window.contentView = NSHostingView(rootView: SetupView(
             settings: settings,
@@ -362,7 +362,7 @@ private struct AccessibilityHelperView: View {
                     .scaledToFit()
                     .frame(width: 52, height: 52)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Clipboard Annotator")
+                    Text("Sendpoint")
                         .font(.title2.weight(.semibold))
                     Label(
                         permissionState.accessibility == .granted ? "Accessibility granted" : "Accessibility needs a manual grant",
@@ -377,7 +377,7 @@ private struct AccessibilityHelperView: View {
                 Text("Finish in System Settings")
                     .font(.headline)
                 Text("1. Open Privacy & Security → Accessibility.")
-                Text("2. Turn on Clipboard Annotator in the app list.")
+                Text("2. Turn on Sendpoint in the app list.")
                 Text("3. Return here. This window closes when access is granted.")
             }
 

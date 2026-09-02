@@ -3,23 +3,23 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-APP_NAME="Clipboard Annotator"
+APP_NAME="Sendpoint"
 SRC="dist/${APP_NAME}.app"
 DEST="/Applications/${APP_NAME}.app"
 
 [ -d "$SRC" ] || { echo "Build it first: ./build.sh"; exit 1; }
 
 echo "==> Quitting any running copy"
-pkill -x "ClipboardAnnotator" 2>/dev/null || true
+pkill -x "Sendpoint" 2>/dev/null || true
 # Wait for it to actually go. Two live copies both own the annotation store
 # in memory, and whichever saves last wins — that resurrects deleted notes.
 for _ in $(seq 1 40); do
-    pgrep -x "ClipboardAnnotator" >/dev/null 2>&1 || break
+    pgrep -x "Sendpoint" >/dev/null 2>&1 || break
     sleep 0.1
 done
-if pgrep -x "ClipboardAnnotator" >/dev/null 2>&1; then
+if pgrep -x "Sendpoint" >/dev/null 2>&1; then
     echo "    Existing copy did not quit; stopping it now"
-    pkill -KILL -x "ClipboardAnnotator"
+    pkill -KILL -x "Sendpoint"
 fi
 
 echo "==> Installing to ${DEST}"
@@ -31,11 +31,11 @@ echo "==> Launching"
 # just quit and return kLSApplicationNotFoundErr (-600).
 open -n "$DEST"
 for _ in $(seq 1 40); do
-    pgrep -x "ClipboardAnnotator" >/dev/null 2>&1 && break
+    pgrep -x "Sendpoint" >/dev/null 2>&1 && break
     sleep 0.1
 done
-pgrep -x "ClipboardAnnotator" >/dev/null 2>&1 || {
-    echo "Launch failed: ClipboardAnnotator did not start" >&2
+pgrep -x "Sendpoint" >/dev/null 2>&1 || {
+    echo "Launch failed: Sendpoint did not start" >&2
     exit 1
 }
 

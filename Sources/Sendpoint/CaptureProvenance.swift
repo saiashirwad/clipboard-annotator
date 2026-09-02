@@ -1,4 +1,4 @@
-import ClipboardAnnotatorDomain
+import SendpointDomain
 import Foundation
 
 /// Retains probe work after a successful save, but not after an unsaved cancel.

@@ -1,4 +1,4 @@
-# Clipboard Annotator
+# Sendpoint
 
 A macOS menu bar app for thinking out loud while you read.
 
@@ -17,7 +17,7 @@ Requires macOS 14 or later on Apple Silicon.
 ## Install
 
 Download the latest zip from [Releases](../../releases), unzip it, and drag
-**Clipboard Annotator** into `/Applications`. Open it and look for the
+**Sendpoint** into `/Applications`. Open it and look for the
 speech-bubble icon in the menu bar.
 
 The current builds are ad-hoc signed and are not notarized by Apple. On the

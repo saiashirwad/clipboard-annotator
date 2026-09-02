@@ -1,4 +1,4 @@
-import ClipboardAnnotatorDomain
+import SendpointDomain
 import Foundation
 import Observation
 

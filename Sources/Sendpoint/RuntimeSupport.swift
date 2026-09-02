@@ -1,5 +1,5 @@
 import AppKit
-import ClipboardAnnotatorDomain
+import SendpointDomain
 import Foundation
 
 /// Converts SwiftUI's insertion offset into ordered Domain final-index moves.

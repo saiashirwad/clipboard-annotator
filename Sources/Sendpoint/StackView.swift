@@ -1,5 +1,5 @@
 import AppKit
-import ClipboardAnnotatorDomain
+import SendpointDomain
 import SwiftUI
 
 struct StackView: View {
@@ -10,7 +10,7 @@ struct StackView: View {
     @State private var justCopied = false
     @State private var copyFeedbackID: UUID?
 
-    private var entries: [ClipboardAnnotatorDomain.Annotation] { store.currentEntries }
+    private var entries: [SendpointDomain.Annotation] { store.currentEntries }
     private var facts: SessionUIFacts {
         SessionUIFacts(
             sessions: store.sessions,
@@ -396,7 +396,7 @@ struct StackView: View {
 
 private struct StackRow: View {
     let index: Int
-    let entry: ClipboardAnnotatorDomain.Annotation
+    let entry: SendpointDomain.Annotation
     let onNoteChanged: (String) -> Void
     let onDelete: () -> Void
 

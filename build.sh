@@ -3,12 +3,12 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-APP_NAME="Clipboard Annotator"
-BUNDLE_ID="com.texoport.ClipboardAnnotator"
+APP_NAME="Sendpoint"
+BUNDLE_ID="app.sendpoint"
 BIN_DIR=$(swift build -c release --show-bin-path)
 DIST="dist/${APP_NAME}.app"
 PLIST="${DIST}/Contents/Info.plist"
-ENTITLEMENTS="Resources/ClipboardAnnotator.entitlements"
+ENTITLEMENTS="Resources/Sendpoint.entitlements"
 
 # Version comes from Resources/Info.plist (release.sh bumps it). The build
 # number is the commit count, so every build is distinguishable.
@@ -21,7 +21,7 @@ swift build -c release
 echo "==> Assembling ${DIST}"
 rm -rf "dist"
 mkdir -p "${DIST}/Contents/MacOS" "${DIST}/Contents/Resources"
-cp "${BIN_DIR}/ClipboardAnnotator" "${DIST}/Contents/MacOS/ClipboardAnnotator"
+cp "${BIN_DIR}/Sendpoint" "${DIST}/Contents/MacOS/Sendpoint"
 cp "Resources/Info.plist" "${PLIST}"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${APP_VERSION}" "${PLIST}"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${APP_BUILD}" "${PLIST}"

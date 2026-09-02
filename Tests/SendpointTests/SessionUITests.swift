@@ -1,7 +1,7 @@
-import ClipboardAnnotatorDomain
+import SendpointDomain
 import Foundation
 import XCTest
-@testable import ClipboardAnnotator
+@testable import Sendpoint
 
 final class SessionUITests: XCTestCase {
     private let firstID = UUID(uuidString: "00000000-0000-0000-0000-000000000010")!

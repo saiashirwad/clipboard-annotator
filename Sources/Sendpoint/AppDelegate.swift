@@ -1,5 +1,5 @@
 import AppKit
-import ClipboardAnnotatorDomain
+import SendpointDomain
 import SwiftUI
 
 @MainActor
@@ -177,7 +177,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let main = NSMenu()
 
         let appItem = NSMenuItem()
-        appItem.submenu = NSMenu(title: "Clipboard Annotator")
+        appItem.submenu = NSMenu(title: "Sendpoint")
         main.addItem(appItem)
 
         let file = NSMenu(title: "File")
@@ -212,12 +212,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setUpStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        let image = NSImage(systemSymbolName: "quote.bubble", accessibilityDescription: "Clipboard Annotator")
+        let image = NSImage(systemSymbolName: "quote.bubble", accessibilityDescription: "Sendpoint")
         image?.isTemplate = true
         if let button = statusItem.button {
             button.image = image
             button.imagePosition = image == nil ? .noImage : .imageLeading
-            if image == nil { button.title = "CA" }
+            if image == nil { button.title = "S" }
         }
         statusItem.isVisible = true
         rebuildMenu()
@@ -412,7 +412,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsItem.target = self
         menu.addItem(settingsItem)
 
-        let quit = NSMenuItem(title: "Quit Clipboard Annotator", action: #selector(quit), keyEquivalent: "q")
+        let quit = NSMenuItem(title: "Quit Sendpoint", action: #selector(quit), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
 

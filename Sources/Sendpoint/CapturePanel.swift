@@ -1,5 +1,5 @@
 import AppKit
-import ClipboardAnnotatorDomain
+import SendpointDomain
 import SwiftUI
 
 /// A floating panel that can take keyboard focus and, crucially, does **not**
@@ -736,5 +736,5 @@ final class CaptureController {
 }
 
 extension Notification.Name {
-    static let captureWillPresent = Notification.Name("ClipboardAnnotator.captureWillPresent")
+    static let captureWillPresent = Notification.Name("Sendpoint.captureWillPresent")
 }

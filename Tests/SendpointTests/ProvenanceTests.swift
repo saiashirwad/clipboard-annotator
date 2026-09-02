@@ -1,7 +1,7 @@
-import ClipboardAnnotatorDomain
+import SendpointDomain
 import Foundation
 import XCTest
-@testable import ClipboardAnnotator
+@testable import Sendpoint
 
 final class ProvenanceProbeTests: XCTestCase {
     private let application = CapturedApplication(

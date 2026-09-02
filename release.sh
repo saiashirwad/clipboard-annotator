@@ -11,7 +11,7 @@
 #      (Xcode → Settings → Accounts → Manage Certificates).
 #   2. Store notarization credentials, using an app-specific password from
 #      appleid.apple.com:
-#        xcrun notarytool store-credentials clipboard-annotator \
+#        xcrun notarytool store-credentials sendpoint \
 #            --apple-id you@example.com --team-id TEAMID
 set -euo pipefail
 
@@ -46,11 +46,11 @@ if [ -z "$VERSION" ]; then
     exit 1
 fi
 
-APP_NAME="Clipboard Annotator"
+APP_NAME="Sendpoint"
 APP="dist/${APP_NAME}.app"
-ARCHIVE="dist/ClipboardAnnotator-${VERSION}.zip"
+ARCHIVE="dist/Sendpoint-${VERSION}.zip"
 CHECKSUM="${ARCHIVE}.sha256"
-NOTARY_PROFILE="${NOTARY_PROFILE:-clipboard-annotator}"
+NOTARY_PROFILE="${NOTARY_PROFILE:-sendpoint}"
 
 if [ "$AD_HOC" = false ]; then
     if ! security find-identity -v -p codesigning | grep -q "Developer ID Application"; then
@@ -132,7 +132,7 @@ if [ "$PUBLISH" = true ]; then
             '> This build is ad-hoc signed and is not notarized by Apple.' \
             '> Only open it if you trust this repository.' \
             '' \
-            'Move **Clipboard Annotator.app** to `/Applications` and try to open it once.' \
+            'Move **Sendpoint.app** to `/Applications` and try to open it once.' \
             'If macOS blocks it, open **System Settings > Privacy & Security**, scroll to **Security**, click **Open Anyway**, then confirm **Open**.')
         gh release create "v${VERSION}" "$ARCHIVE" "$CHECKSUM" \
             --title "${APP_NAME} ${VERSION}" \

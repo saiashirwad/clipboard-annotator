@@ -1,7 +1,7 @@
 // Static site plus one dynamic route: /download sends the visitor to the
 // newest zip on the GitHub releases page.
 
-const REPO = "saiashirwad/clipboard-annotator";
+const REPO = "saiashirwad/sendpoint";
 const RELEASES_PAGE = `https://github.com/${REPO}/releases/latest`;
 const CACHE_SECONDS = 600;
 

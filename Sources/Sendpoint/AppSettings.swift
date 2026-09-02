@@ -1,6 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
-import ClipboardAnnotatorDomain
+import SendpointDomain
 import Observation
 import ServiceManagement
 
@@ -73,7 +73,7 @@ final class AppSettings {
                 if launchAtLogin { try SMAppService.mainApp.register() }
                 else { try SMAppService.mainApp.unregister() }
             } catch {
-                NSLog("ClipboardAnnotator: login item change failed — \(error)")
+                NSLog("Sendpoint: login item change failed — \(error)")
             }
         }
     }

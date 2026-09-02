@@ -1,5 +1,5 @@
 import AppKit
-import ClipboardAnnotatorDomain
+import SendpointDomain
 import SwiftUI
 
 enum SettingsTab: String, CaseIterable, Identifiable {
