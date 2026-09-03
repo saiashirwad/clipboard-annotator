@@ -96,6 +96,9 @@ struct PermissionCapabilityList: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(.separator.opacity(0.65))
         }
+        .task {
+            await permissionState.watchVoiceModel()
+        }
     }
 
     private var accessibilityRow: some View {
@@ -129,8 +132,7 @@ struct PermissionCapabilityList: View {
             reason: "Transcribes voice annotations on this Mac. Optional. A one-time 460 MB download.",
             status: voiceModelStatus,
             actionTitle: voiceModelActionTitle,
-            showsProgress: permissionState.localVoiceModel == .checking
-                || permissionState.localVoiceModel == .downloading,
+            showsProgress: voiceModelIsDownloading,
             action: performVoiceModelAction
         )
     }
@@ -155,13 +157,20 @@ struct PermissionCapabilityList: View {
 
     private var voiceModelStatus: CapabilityStatus {
         switch permissionState.localVoiceModel {
-        case .checking: .neutral("Checking…")
         case .notDownloaded: .neutral("Not downloaded")
-        case .downloading: .neutral("Downloading…")
+        case let .downloading(progress):
+            .neutral(progress.map { "Downloading… \(Int($0 * 100))%" } ?? "Downloading…")
         case .ready: .ready("Downloaded")
         case .failed(.offline): .attention("No internet connection")
         case .failed(.other): .attention("Download failed")
         }
+    }
+
+    private var voiceModelIsDownloading: Bool {
+        if case .downloading = permissionState.localVoiceModel {
+            return true
+        }
+        return false
     }
 
     private var accessibilityActionTitle: String? {

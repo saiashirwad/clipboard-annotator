@@ -2,6 +2,19 @@ import AVFoundation
 import FluidAudio
 import Foundation
 
+extension Notification.Name {
+    static let voiceModelDidBecomeReady = Notification.Name("Sendpoint.voiceModelDidBecomeReady")
+}
+
+enum LocalVoiceModelFiles {
+    static func exist() -> Bool {
+        AsrModels.modelsExist(
+            at: AsrModels.defaultCacheDirectory(for: .v3),
+            version: .v3
+        )
+    }
+}
+
 /// Records one short clip and sends it to the same local Parakeet engine that
 /// Hex uses. The model downloads only when the user asks for voice setup or
 /// first makes a voice annotation. Neither the audio nor its transcript leaves the Mac.
@@ -27,8 +40,10 @@ final class VoiceAnnotationService {
         await transcriber.isReady()
     }
 
-    func downloadVoiceModel() async throws {
-        try await transcriber.prepare()
+    func downloadVoiceModel(
+        onProgress: @escaping @Sendable (Double) -> Void = { _ in }
+    ) async throws {
+        try await transcriber.prepare(onProgress: onProgress)
     }
 
     func requestMicrophoneAccess() async -> Bool {
@@ -151,10 +166,7 @@ actor LocalVoiceTranscriber {
     private let modelsAreDownloaded: @Sendable () -> Bool
 
     init(modelsAreDownloaded: @escaping @Sendable () -> Bool = {
-        AsrModels.modelsExist(
-            at: AsrModels.defaultCacheDirectory(for: .v3),
-            version: .v3
-        )
+        LocalVoiceModelFiles.exist()
     }) {
         self.modelsAreDownloaded = modelsAreDownloaded
     }
@@ -163,8 +175,10 @@ actor LocalVoiceTranscriber {
         await preparation.isPrepared() || modelsAreDownloaded()
     }
 
-    func prepare() async throws {
-        _ = try await transcriptionManager()
+    func prepare(
+        onProgress: @escaping @Sendable (Double) -> Void = { _ in }
+    ) async throws {
+        _ = try await transcriptionManager(onProgress: onProgress)
     }
 
     func transcribe(url: URL) async throws -> String {
@@ -175,11 +189,20 @@ actor LocalVoiceTranscriber {
         return result.text
     }
 
-    private func transcriptionManager() async throws -> AsrManager {
-        try await preparation.value {
+    private func transcriptionManager(
+        onProgress: @escaping @Sendable (Double) -> Void = { _ in }
+    ) async throws -> AsrManager {
+        let manager = try await preparation.value {
             // Parakeet TDT v3 is Hex's default, multilingual, on-device model.
-            let models = try await AsrModels.downloadAndLoad(version: .v3)
+            let models = try await AsrModels.downloadAndLoad(
+                version: .v3,
+                progressHandler: { onProgress($0.fractionCompleted) }
+            )
             return AsrManager(config: .init(), models: models)
         }
+        await MainActor.run {
+            NotificationCenter.default.post(name: .voiceModelDidBecomeReady, object: nil)
+        }
+        return manager
     }
 }

@@ -19,9 +19,8 @@ enum MicrophonePermissionState: Equatable, Sendable {
 }
 
 enum LocalVoiceModelState: Equatable, Sendable {
-    case checking
     case notDownloaded
-    case downloading
+    case downloading(progress: Double?)
     case ready
     case failed(VoiceModelDownloadFailure)
 }
@@ -59,8 +58,10 @@ struct PermissionServices: Sendable {
     var requestAccessibility: @Sendable () async -> Bool
     var microphoneStatus: @Sendable () async -> MicrophonePermissionState
     var requestMicrophone: @Sendable () async -> Bool
-    var voiceModelIsReady: @Sendable () async -> Bool
-    var downloadVoiceModel: @Sendable () async throws -> Void
+    var voiceModelFilesExist: @Sendable () -> Bool
+    var downloadVoiceModel: @Sendable (
+        _ onProgress: @escaping @Sendable (Double) -> Void
+    ) async throws -> Void
     var openAccessibilitySettings: @MainActor @Sendable () -> Void
     var openMicrophoneSettings: @MainActor @Sendable () -> Void
 
@@ -80,11 +81,13 @@ struct PermissionServices: Sendable {
             requestMicrophone: {
                 await VoiceAnnotationService.shared.requestMicrophoneAccess()
             },
-            voiceModelIsReady: {
-                await VoiceAnnotationService.shared.isVoiceModelReady()
+            voiceModelFilesExist: {
+                LocalVoiceModelFiles.exist()
             },
-            downloadVoiceModel: {
-                try await VoiceAnnotationService.shared.downloadVoiceModel()
+            downloadVoiceModel: { onProgress in
+                try await VoiceAnnotationService.shared.downloadVoiceModel(
+                    onProgress: onProgress
+                )
             },
             openAccessibilitySettings: {
                 PermissionCheck.openAccessibilitySettings()
@@ -110,7 +113,7 @@ final class PermissionState {
 
     private(set) var accessibility: AccessibilityPermissionState = .checking
     private(set) var microphone: MicrophonePermissionState = .checking
-    private(set) var localVoiceModel: LocalVoiceModelState = .checking
+    private(set) var localVoiceModel: LocalVoiceModelState
     private(set) var hasRequestedAccessibility = false
 
     var accessibilityAction: PermissionAction? {
@@ -135,7 +138,7 @@ final class PermissionState {
 
     var localVoiceModelAction: PermissionAction? {
         switch localVoiceModel {
-        case .checking, .downloading, .ready:
+        case .downloading, .ready:
             return nil
         case .notDownloaded, .failed:
             return .downloadVoiceModel
@@ -155,6 +158,8 @@ final class PermissionState {
     @ObservationIgnored private var accessibilityRequestTask: Task<Void, Never>?
     @ObservationIgnored private var microphoneRequestTask: Task<Void, Never>?
     @ObservationIgnored private var modelDownloadTask: Task<Void, Never>?
+    @ObservationIgnored private var modelProgressTask: Task<Void, Never>?
+    @ObservationIgnored private var readinessObserver: NSObjectProtocol?
 
     @ObservationIgnored private var refreshGeneration = 0
     @ObservationIgnored private var accessibilityGeneration = 0
@@ -163,6 +168,16 @@ final class PermissionState {
 
     init(services: PermissionServices) {
         self.services = services
+        localVoiceModel = services.voiceModelFilesExist() ? .ready : .notDownloaded
+        readinessObserver = NotificationCenter.default.addObserver(
+            forName: .voiceModelDidBecomeReady,
+            object: nil,
+            queue: nil
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.voiceModelBecameReady()
+            }
+        }
     }
 
     convenience init() {
@@ -179,8 +194,11 @@ final class PermissionState {
         let appliesAccessibility = accessibilityRefreshTask == nil
             && accessibilityRequestTask == nil
         let microphoneID = microphoneGeneration
-        let modelID = modelGeneration
         let services = services
+
+        // Model readiness is an on-disk fact. Read it without joining the
+        // unrelated asynchronous permission checks.
+        refreshVoiceModel()
 
         // Keep the last useful values visible while a background refresh runs.
         // The initial values already communicate the first load.
@@ -188,20 +206,57 @@ final class PermissionState {
             guard !Task.isCancelled else { return }
             async let accessibility = services.accessibilityStatus()
             async let microphone = services.microphoneStatus()
-            async let modelIsReady = services.voiceModelIsReady()
 
-            let result = await (accessibility, microphone, modelIsReady)
+            let result = await (accessibility, microphone)
             guard !Task.isCancelled else { return }
             self?.finishRefresh(
                 refreshID: refreshID,
                 accessibilityID: accessibilityID,
                 appliesAccessibility: appliesAccessibility,
                 microphoneID: microphoneID,
-                modelID: modelID,
                 accessibility: result.0,
-                microphone: result.1,
-                modelIsReady: result.2
+                microphone: result.1
             )
+        }
+    }
+
+    func voiceModelBecameReady() {
+        guard lifecycle == .active else { return }
+        // Let this instance's download finish through its one completion path.
+        // A capture-time preparation has no owned task, so it invalidates any
+        // older model result before publishing readiness.
+        if modelDownloadTask == nil {
+            modelGeneration += 1
+        }
+        localVoiceModel = .ready
+    }
+
+    /// Re-read the model files without hiding a download or its last failure.
+    func refreshVoiceModel() {
+        guard lifecycle == .active, modelDownloadTask == nil else { return }
+        if services.voiceModelFilesExist() {
+            if localVoiceModel != .ready {
+                modelGeneration += 1
+                localVoiceModel = .ready
+            }
+            return
+        }
+        if case .failed = localVoiceModel { return }
+        if localVoiceModel != .notDownloaded {
+            modelGeneration += 1
+            localVoiceModel = .notDownloaded
+        }
+    }
+
+    /// Watch the files only while Setup or Settings shows this state.
+    func watchVoiceModel(interval: Duration = .seconds(2)) async {
+        while lifecycle == .active, !Task.isCancelled {
+            refreshVoiceModel()
+            do {
+                try await Task.sleep(for: interval)
+            } catch {
+                return
+            }
         }
     }
 
@@ -270,12 +325,27 @@ final class PermissionState {
         modelGeneration += 1
         let generation = modelGeneration
         let services = services
-        localVoiceModel = .downloading
+        localVoiceModel = .downloading(progress: nil)
+
+        let (progressValues, progressContinuation) = AsyncStream.makeStream(of: Double.self)
+        modelProgressTask = Task { [weak self] in
+            for await fraction in progressValues {
+                guard !Task.isCancelled else { return }
+                self?.reportModelDownloadProgress(
+                    generation: generation,
+                    fraction: fraction
+                )
+            }
+        }
+        let reportProgress: @Sendable (Double) -> Void = { fraction in
+            progressContinuation.yield(fraction)
+        }
 
         modelDownloadTask = Task { [weak self, services] in
+            defer { progressContinuation.finish() }
             do {
                 try Task.checkCancellation()
-                try await services.downloadVoiceModel()
+                try await services.downloadVoiceModel(reportProgress)
                 try Task.checkCancellation()
                 self?.finishModelDownload(generation: generation, result: .ready)
             } catch is CancellationError {
@@ -309,6 +379,7 @@ final class PermissionState {
                 accessibilityRequestTask,
                 microphoneRequestTask,
                 modelDownloadTask,
+                modelProgressTask,
             ].compactMap { $0 }
             guard !tasks.isEmpty else { return }
             for task in tasks { await task.value }
@@ -329,11 +400,17 @@ final class PermissionState {
         accessibilityRequestTask?.cancel()
         microphoneRequestTask?.cancel()
         modelDownloadTask?.cancel()
+        modelProgressTask?.cancel()
+        if let readinessObserver {
+            NotificationCenter.default.removeObserver(readinessObserver)
+            self.readinessObserver = nil
+        }
         refreshTask = nil
         accessibilityRefreshTask = nil
         accessibilityRequestTask = nil
         microphoneRequestTask = nil
         modelDownloadTask = nil
+        modelProgressTask = nil
     }
 
     private func finishRefresh(
@@ -341,10 +418,8 @@ final class PermissionState {
         accessibilityID: Int,
         appliesAccessibility: Bool,
         microphoneID: Int,
-        modelID: Int,
         accessibility: AccessibilityPermissionState,
-        microphone: MicrophonePermissionState,
-        modelIsReady: Bool
+        microphone: MicrophonePermissionState
     ) {
         guard lifecycle == .active, refreshGeneration == refreshID else { return }
         refreshTask = nil
@@ -353,9 +428,6 @@ final class PermissionState {
         }
         if microphoneGeneration == microphoneID {
             self.microphone = microphone
-        }
-        if modelGeneration == modelID {
-            localVoiceModel = modelIsReady ? .ready : .notDownloaded
         }
     }
 
@@ -383,10 +455,20 @@ final class PermissionState {
         microphone = granted ? .granted : .denied
     }
 
+    private func reportModelDownloadProgress(generation: Int, fraction: Double) {
+        guard lifecycle == .active,
+              modelGeneration == generation,
+              case .downloading = localVoiceModel
+        else { return }
+        localVoiceModel = .downloading(progress: min(max(fraction, 0), 1))
+    }
+
     private func finishModelDownload(generation: Int, result: LocalVoiceModelState) {
         guard lifecycle == .active, modelGeneration == generation else { return }
         modelGeneration += 1
         modelDownloadTask = nil
+        modelProgressTask?.cancel()
+        modelProgressTask = nil
         localVoiceModel = result
     }
 }
