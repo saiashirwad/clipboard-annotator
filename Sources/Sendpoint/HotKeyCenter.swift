@@ -43,6 +43,25 @@ final class HotKeyCenter {
     ) {
         unregister(name: name)
         guard let combo, combo.isValid else { return }
+        registerRaw(
+            name: name,
+            keyCode: combo.keyCode,
+            carbonModifiers: combo.carbonModifiers,
+            pressed: pressed,
+            released: released
+        )
+    }
+
+    /// Registers a Carbon hotkey without requiring a KeyCombo. This is used
+    /// for the temporary, modifier-free Escape cancel key.
+    func registerRaw(
+        name: String,
+        keyCode: UInt16,
+        carbonModifiers: UInt32,
+        pressed: @escaping () -> Void,
+        released: (() -> Void)? = nil
+    ) {
+        unregister(name: name)
         installHandlerIfNeeded()
 
         let id = nextID
@@ -50,14 +69,14 @@ final class HotKeyCenter {
         var ref: EventHotKeyRef?
         let hotKeyID = EventHotKeyID(signature: OSType(0x434C_414E), id: id) // 'CLAN'
         let status = RegisterEventHotKey(
-            UInt32(combo.keyCode), combo.carbonModifiers, hotKeyID,
+            UInt32(keyCode), carbonModifiers, hotKeyID,
             GetApplicationEventTarget(), 0, &ref
         )
         guard status == noErr, let ref else {
-            Diag.log("hotkey FAILED name=\(name) combo=\(combo.displayString) keyCode=\(combo.keyCode) carbonMods=\(combo.carbonModifiers) status=\(status)")
+            Diag.log("hotkey FAILED name=\(name) keyCode=\(keyCode) carbonMods=\(carbonModifiers) status=\(status)")
             return
         }
-        Diag.log("hotkey ok name=\(name) combo=\(combo.displayString) id=\(id)")
+        Diag.log("hotkey ok name=\(name) keyCode=\(keyCode) carbonMods=\(carbonModifiers) id=\(id)")
         handlers[id] = Handler(pressed: pressed, released: released)
         refs[id] = ref
         names[name] = id

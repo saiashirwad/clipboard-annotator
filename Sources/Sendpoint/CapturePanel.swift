@@ -51,6 +51,8 @@ final class CaptureController {
     private let permissionState: PermissionState
     var onAccessibilityRequired: (() -> Void)?
     var onStatusChange: (() -> Void)?
+    var onVoiceCaptureEnded: ((VoiceTriggerSource) -> Void)?
+    var onVoiceEscape: (() -> Void)?
     private var lifecycle: Lifecycle = .awaitingStore
 
     private var store: AnnotationStore? {
@@ -83,6 +85,11 @@ final class CaptureController {
 
     func beginCapture() {
         guard let store, !store.isTornDown else { NSSound.beep(); return }
+        if voiceModel != nil {
+            // A typed request must not take focus or interrupt a voice note.
+            NSSound.beep()
+            return
+        }
         if isOpen {
             // Second press while open: just bring it back to the front.
             NSApp.activate(ignoringOtherApps: true)
@@ -105,20 +112,26 @@ final class CaptureController {
 
     /// Starts a capture and a microphone recording together. `endVoiceCapture`
     /// is called by the matching global-hotkey release event.
-    func beginVoiceCapture() {
-        guard let store, !store.isTornDown else { NSSound.beep(); return }
+    func beginVoiceCapture(trigger: VoiceTriggerSource = .hotKey) {
+        guard let store, !store.isTornDown else {
+            NSSound.beep()
+            onVoiceCaptureEnded?(trigger)
+            return
+        }
         guard permissionState.isTextCaptureReady else {
             onAccessibilityRequired?()
+            onVoiceCaptureEnded?(trigger)
             return
         }
 
         if isOpen {
             NSSound.beep()
+            onVoiceCaptureEnded?(trigger)
             return
         }
 
         let context = AnnotationCaptureContext(sessionID: store.currentSessionID)
-        let model = VoiceCaptureModel(context: context)
+        let model = VoiceCaptureModel(context: context, trigger: trigger)
 
         // Install the lifecycle owner before selection capture. The clipboard
         // fallback runs the main run loop, so the matching key-up can arrive
@@ -156,7 +169,6 @@ final class CaptureController {
         if let target = model.target {
             provenanceWork.start(for: target)
         }
-        focusVoiceOverlay()
         let selectionAction = model.selectionCompleted()
 
         if let recordingStartError {
@@ -172,8 +184,22 @@ final class CaptureController {
     }
 
     func endVoiceCapture() {
+        endVoiceCapture(source: .hotKey)
+    }
+
+    func endVoiceCapture(source: VoiceTriggerSource) {
         guard let model = voiceModel else { return }
+        guard model.trigger == source else { return }
         runVoiceAction(model.release(), for: model)
+    }
+
+    func cancelVoiceCapture(source: VoiceTriggerSource) {
+        guard let model = voiceModel, model.trigger == source else { return }
+        teardownVoice(returnFocus: true)
+    }
+
+    func setVoiceOverlayLatched(_ latched: Bool) {
+        voiceModel?.setLatched(latched)
     }
 
     private func present(_ target: AnnotationCaptureTarget) {
@@ -254,17 +280,13 @@ final class CaptureController {
         positionVoiceOverlay(panel)
         voicePanel = panel
         installVoiceKeyMonitor()
+        HotKeyCenter.shared.registerRaw(
+            name: "voiceEscape",
+            keyCode: 53,
+            carbonModifiers: 0,
+            pressed: { [weak self] in self?.onVoiceEscape?() }
+        )
         panel.orderFrontRegardless()
-    }
-
-    /// Once the selection is read, take focus so Escape reaches the overlay.
-    private func focusVoiceOverlay() {
-        guard let panel = voicePanel else { return }
-        // Synchronous: auxiliary windows must be out of the way before we
-        // activate, or activating drags them forward with the panel.
-        NotificationCenter.default.post(name: .captureWillPresent, object: nil)
-        NSApp.activate(ignoringOtherApps: true)
-        panel.makeKeyAndOrderFront(nil)
     }
 
     // MARK: - Placement
@@ -346,7 +368,11 @@ final class CaptureController {
         voiceKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self, let panel = self.voicePanel, event.window === panel else { return event }
             if event.keyCode == 53 { // escape
-                self.teardownVoice(returnFocus: true)
+                if let onVoiceEscape = self.onVoiceEscape {
+                    onVoiceEscape()
+                } else {
+                    self.teardownVoice(returnFocus: true)
+                }
                 return nil
             }
             return event
@@ -675,6 +701,7 @@ final class CaptureController {
 
     /// The only voice teardown path. It is safe to call more than once.
     private func teardownVoice(returnFocus: Bool) {
+        let endedSource = voiceModel?.trigger
         if let target = voiceModel?.target {
             provenanceWork.cancelBeforeSave(for: target)
         }
@@ -687,6 +714,7 @@ final class CaptureController {
         voiceFailureTask = nil
         VoiceAnnotationService.shared.discardRecording()
 
+        HotKeyCenter.shared.unregister(name: "voiceEscape")
         if let voiceKeyMonitor { NSEvent.removeMonitor(voiceKeyMonitor) }
         voiceKeyMonitor = nil
         voicePanel?.onClose = nil
@@ -700,6 +728,9 @@ final class CaptureController {
             previousApp.activate()
         }
         previousApp = nil
+        if let endedSource {
+            onVoiceCaptureEnded?(endedSource)
+        }
     }
 
     private func applyLateProvenance(_ mutation: SessionDocumentMutation) {
@@ -729,6 +760,8 @@ final class CaptureController {
         lifecycle = .tornDown
         onAccessibilityRequired = nil
         onStatusChange = nil
+        onVoiceCaptureEnded = nil
+        onVoiceEscape = nil
         provenanceWork.teardown()
         dismiss(returnFocus: false)
         teardownVoice(returnFocus: false)

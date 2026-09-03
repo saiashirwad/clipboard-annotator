@@ -1,4 +1,5 @@
 import AppKit
+import QuartzCore
 import SendpointDomain
 import SwiftUI
 
@@ -29,6 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let settings: AppSettings
     private let captureController: CaptureController
     private let permissionState: PermissionState
+    private var voiceTrigger = VoiceTriggerMachine()
 
     override init() {
         let settings = AppSettings.shared
@@ -45,6 +47,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         captureController.onStatusChange = { [weak self] in
             self?.refreshStatusItem()
+        }
+        captureController.onVoiceCaptureEnded = { [weak self] source in
+            self?.handleVoiceTrigger(.captureEnded(source: source))
+        }
+        captureController.onVoiceEscape = { [weak self] in
+            self?.handleVoiceTrigger(.escape)
         }
     }
 
@@ -164,7 +172,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         settings.onHotKeysChanged = nil
         settings.onProfilesChanged = nil
-        for name in ["capture", "voiceCapture", "copy", "stack", "switchSession", "clear"] {
+        for name in ["capture", "voiceCapture", "voiceEscape", "copy", "stack", "switchSession", "clear"] {
             HotKeyCenter.shared.unregister(name: name)
         }
     }
@@ -252,6 +260,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func rebuildMenu() {
         let menu = NSMenu()
+
+        let voice = NSMenuItem(
+            title: "Voice Note",
+            action: isStoreAvailable ? #selector(captureVoiceSelection) : nil,
+            keyEquivalent: ""
+        )
+        voice.target = self
+        apply(settings.voiceCaptureCombo, to: voice)
+        menu.addItem(voice)
 
         let capture = NSMenuItem(
             title: "Capture Selection",
@@ -442,8 +459,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HotKeyCenter.shared.registerHold(
             name: "voiceCapture",
             combo: settings.voiceCaptureCombo,
-            pressed: { [weak self] in self?.captureVoiceSelection() },
-            released: { [weak self] in self?.captureController.endVoiceCapture() }
+            pressed: { [weak self] in
+                self?.handleVoiceTrigger(.hotKeyPressed(at: CACurrentMediaTime()))
+            },
+            released: { [weak self] in
+                self?.handleVoiceTrigger(.hotKeyReleased(at: CACurrentMediaTime()))
+            }
         )
         HotKeyCenter.shared.register(name: "copy", combo: settings.copyCombo) { [weak self] in
             self?.copyMarkdown()
@@ -467,9 +488,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         captureController.beginCapture()
     }
 
-    private func captureVoiceSelection() {
+    @objc private func captureVoiceSelection() {
         Diag.log("voice capture invoked")
-        captureController.beginVoiceCapture()
+        // A menu click is a tap gesture. Feeding both edges keeps it subject
+        // to the same latch and duplicate-finalization rules as the shortcut.
+        let now = CACurrentMediaTime()
+        handleVoiceTrigger(.hotKeyPressed(at: now))
+        handleVoiceTrigger(.hotKeyReleased(at: now))
+    }
+
+    private func handleVoiceTrigger(_ event: VoiceTriggerEvent) {
+        runVoiceCommands(voiceTrigger.handle(event))
+    }
+
+    private func runVoiceCommands(_ commands: [VoiceTriggerCommand]) {
+        for command in commands {
+            switch command {
+            case let .beginCapture(source):
+                captureController.beginVoiceCapture(trigger: source)
+            case let .finishCapture(source):
+                captureController.endVoiceCapture(source: source)
+            case let .cancelCapture(source):
+                captureController.cancelVoiceCapture(source: source)
+            case let .setLatched(latched):
+                captureController.setVoiceOverlayLatched(latched)
+            }
+        }
     }
 
     @objc private func copyMarkdown() {
@@ -734,7 +778,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self?.presentAccessibilityHelper()
                 },
                 onComplete: { [weak self] in
-                    self?.setupWindowController?.close()
+                    guard let self else { return }
+                    self.setupWindowController?.close()
+                    self.flashStatus("Hold \(self.settings.voiceCaptureCombo.displayString) to talk")
                 }
             )
         }

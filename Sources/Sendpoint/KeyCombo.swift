@@ -54,6 +54,11 @@ struct KeyCombo: Codable, Equatable, Hashable {
         return name.lowercased()
     }
 
+    static let optionSpace = KeyCombo(
+        keyCode: UInt16(kVK_Space),
+        modifiers: [.option]
+    )
+
     private static let menuEquivalents: [UInt16: String] = [
         UInt16(kVK_Return): "\r",
         UInt16(kVK_ANSI_KeypadEnter): "\u{3}",

@@ -88,7 +88,7 @@ final class AppSettings {
         captureCombo = AppSettings.read(Key.captureCombo, from: defaults)
             ?? KeyCombo(keyCode: UInt16(kVK_ANSI_A), modifiers: [.control, .command])
         voiceCaptureCombo = AppSettings.read(Key.voiceCaptureCombo, from: defaults)
-            ?? KeyCombo(keyCode: UInt16(kVK_ANSI_E), modifiers: [.control, .command])
+            ?? .optionSpace
         copyCombo = AppSettings.read(Key.copyCombo, from: defaults)
             ?? KeyCombo(keyCode: UInt16(kVK_ANSI_V), modifiers: [.control, .command])
         stackCombo = AppSettings.read(Key.stackCombo, from: defaults)
