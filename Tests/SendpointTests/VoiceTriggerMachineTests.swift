@@ -95,4 +95,44 @@ final class VoiceTriggerMachineTests: XCTestCase {
         XCTAssertEqual(machine.handle(.captureEnded(source: .modifierHold)), [])
         XCTAssertEqual(machine.state, .comboHeld(pressedAt: 80))
     }
+
+    func testShortcutChangeCancelsHeldCaptureAndRejectsOldRelease() {
+        var machine = VoiceTriggerMachine()
+        _ = machine.handle(.hotKeyPressed(at: 90))
+
+        XCTAssertEqual(
+            machine.handle(.shortcutConfigurationChanged),
+            [.cancelCapture(source: source)]
+        )
+        XCTAssertEqual(machine.state, .idle)
+        XCTAssertEqual(machine.handle(.hotKeyReleased(at: 90.1)), [])
+        XCTAssertEqual(
+            machine.handle(.hotKeyPressed(at: 91)),
+            [.beginCapture(source: source), .setLatched(false)]
+        )
+    }
+
+    func testShortcutChangeCancelsLatchedCaptureWithoutSecondFinalization() {
+        var machine = VoiceTriggerMachine()
+        _ = machine.handle(.hotKeyPressed(at: 100))
+        _ = machine.handle(.hotKeyReleased(at: 100.1))
+
+        XCTAssertEqual(
+            machine.handle(.shortcutConfigurationChanged),
+            [.cancelCapture(source: source)]
+        )
+        XCTAssertEqual(machine.state, .idle)
+        XCTAssertEqual(machine.handle(.hotKeyPressed(at: 101)), [.beginCapture(source: source), .setLatched(false)])
+    }
+
+    func testShortcutChangeResetsAwaitingReleaseWithoutCancellingAgain() {
+        var machine = VoiceTriggerMachine()
+        _ = machine.handle(.hotKeyPressed(at: 110))
+        _ = machine.handle(.escape)
+        XCTAssertEqual(machine.state, .awaitingComboRelease)
+
+        XCTAssertEqual(machine.handle(.shortcutConfigurationChanged), [])
+        XCTAssertEqual(machine.state, .idle)
+        XCTAssertEqual(machine.handle(.hotKeyReleased(at: 110.1)), [])
+    }
 }

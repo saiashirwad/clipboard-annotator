@@ -12,6 +12,9 @@ enum VoiceTriggerEvent: Equatable, Sendable {
     case hotKeyReleased(at: TimeInterval)
     case escape
     case captureEnded(source: VoiceTriggerSource)
+    /// The registered shortcut changed. An active capture must not wait for
+    /// a key-up that belonged to the old registration.
+    case shortcutConfigurationChanged
 }
 
 /// Commands for the capture owner. The machine never touches AppKit or audio.
@@ -54,6 +57,8 @@ struct VoiceTriggerMachine: Equatable, Sendable {
             return escape()
         case let .captureEnded(source):
             return captureEnded(source: source)
+        case .shortcutConfigurationChanged:
+            return configurationChanged()
         }
     }
 
@@ -119,5 +124,18 @@ struct VoiceTriggerMachine: Equatable, Sendable {
             break
         }
         return []
+    }
+
+    private mutating func configurationChanged() -> [VoiceTriggerCommand] {
+        switch state {
+        case .comboHeld, .comboLatched:
+            state = .idle
+            return [.cancelCapture(source: .hotKey)]
+        case .awaitingComboRelease:
+            state = .idle
+            return []
+        case .idle:
+            return []
+        }
     }
 }
