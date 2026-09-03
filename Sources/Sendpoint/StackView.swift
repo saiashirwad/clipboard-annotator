@@ -300,6 +300,10 @@ struct StackView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .safeAreaPadding(.vertical, 10)
+        // macOS 26 extends the list's scroll view up under the title-bar
+        // strip where the header lives, so scrolled rows would otherwise
+        // paint over the header and the traffic lights.
+        .clipped()
     }
 
     // MARK: - Footer

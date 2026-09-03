@@ -88,14 +88,6 @@ final class VoiceTriggerMachineTests: XCTestCase {
         XCTAssertEqual(machine.handle(.hotKeyPressed(at: 70.2)), [.beginCapture(source: source), .setLatched(false)])
     }
 
-    func testCaptureEndedFromWrongSourceDoesNotChangeState() {
-        var machine = VoiceTriggerMachine()
-        _ = machine.handle(.hotKeyPressed(at: 80))
-
-        XCTAssertEqual(machine.handle(.captureEnded(source: .modifierHold)), [])
-        XCTAssertEqual(machine.state, .comboHeld(pressedAt: 80))
-    }
-
     func testShortcutChangeCancelsHeldCaptureAndRejectsOldRelease() {
         var machine = VoiceTriggerMachine()
         _ = machine.handle(.hotKeyPressed(at: 90))

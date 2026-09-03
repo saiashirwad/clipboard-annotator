@@ -3,7 +3,6 @@ import Foundation
 /// The input that owns a voice capture.
 enum VoiceTriggerSource: Equatable, Sendable {
     case hotKey
-    case modifierHold
 }
 
 /// Events delivered by the Carbon voice shortcut and its capture owner.
@@ -113,7 +112,6 @@ struct VoiceTriggerMachine: Equatable, Sendable {
     }
 
     private mutating func captureEnded(source: VoiceTriggerSource) -> [VoiceTriggerCommand] {
-        guard source == .hotKey else { return [] }
         switch state {
         case .comboHeld:
             // Wait for the matching release so it cannot start a new capture.

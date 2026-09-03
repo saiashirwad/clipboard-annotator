@@ -2,42 +2,25 @@ import SwiftUI
 
 /// The press-and-hold voice overlay: a dark glass capsule with a live
 /// waveform while the microphone is open, and a travelling wave while the
-/// transcript is being made.
+/// transcript is being made. It stays wordless unless something went wrong.
 struct VoiceCaptureView: View {
     @Bindable var model: VoiceCaptureModel
     let meter: VoiceLevelMeter
-    let shortcut: KeyCombo
-
-    init(
-        model: VoiceCaptureModel,
-        meter: VoiceLevelMeter,
-        shortcut: KeyCombo = .optionSpace
-    ) {
-        self.model = model
-        self.meter = meter
-        self.shortcut = shortcut
-    }
 
     var body: some View {
         HStack(spacing: 12) {
             indicator
             Waveform(mode: waveformMode, samples: meter.samples)
                 .frame(width: 128, height: 26)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title)
+            if let failureMessage {
+                Text(failureMessage)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(isFailure ? Color.orange : Color.white)
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.system(size: 11))
-                        .foregroundStyle(Color.white.opacity(0.55))
-                }
+                    .foregroundStyle(Color.orange)
+                    .lineLimit(1)
+                    .fixedSize()
             }
-            .lineLimit(1)
-            .fixedSize()
         }
-        .padding(.leading, 16)
-        .padding(.trailing, 20)
+        .padding(.horizontal, 16)
         .frame(height: 54)
         .background(Capsule().fill(.regularMaterial))
         .background(Capsule().fill(Color.black.opacity(0.35)))
@@ -45,9 +28,11 @@ struct VoiceCaptureView: View {
         .shadow(color: .black.opacity(0.38), radius: 18, y: 8)
         .environment(\.colorScheme, .dark)
         .padding(28)
+        // The hosting panel is wider than the capsule so a failure message
+        // can appear later without the window having to resize.
+        .frame(maxWidth: .infinity)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Voice note: \(title)")
-        .accessibilityValue(subtitle ?? "")
+        .accessibilityLabel(accessibilityLabel)
     }
 
     // MARK: - Indicator
@@ -82,31 +67,18 @@ struct VoiceCaptureView: View {
         }
     }
 
-    private var title: String {
+    private var failureMessage: String? {
+        if case let .failed(message, _) = model.phase { return message }
+        return nil
+    }
+
+    private var accessibilityLabel: String {
         switch model.phase {
-        case .selecting, .starting, .recording: "Listening"
-        case .transcribing(.preparingModel): "Preparing voice model"
-        case .transcribing(.transcribing): "Transcribing"
-        case let .failed(message, _): message
+        case .selecting, .starting, .recording: "Voice note: listening"
+        case .transcribing: "Voice note: transcribing"
+        case let .failed(message, _): "Voice note: \(message)"
         case .dismissed: ""
         }
-    }
-
-    private var subtitle: String? {
-        switch model.phase {
-        case .selecting, .starting, .recording:
-            model.isLatched
-                ? "Tap \(shortcut.displayString) again to save · Esc to discard"
-                : "Release to save · Esc to discard"
-        case .transcribing(.preparingModel): "First time only"
-        case .transcribing(.transcribing): "Saving to your stack"
-        case .failed, .dismissed: nil
-        }
-    }
-
-    private var isFailure: Bool {
-        if case .failed = model.phase { return true }
-        return false
     }
 }
 

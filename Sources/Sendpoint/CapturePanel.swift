@@ -281,11 +281,10 @@ final class CaptureController {
 
         let hosting = NSHostingView(rootView: VoiceCaptureView(
             model: model,
-            meter: VoiceAnnotationService.shared.levelMeter,
-            shortcut: settings.voiceCaptureCombo
+            meter: VoiceAnnotationService.shared.levelMeter
         ))
         panel.contentView = hosting
-        panel.setContentSize(hosting.fittingSize)
+        panel.setContentSize(NSSize(width: Self.voiceOverlayWidth, height: hosting.fittingSize.height))
         positionVoiceOverlay(panel)
         voicePanel = panel
         installVoiceKeyMonitor()
@@ -327,6 +326,10 @@ final class CaptureController {
         }
         panel.setFrameOrigin(origin)
     }
+
+    /// Wide enough for the capsule plus a one-line failure message. The panel
+    /// is transparent and ignores the mouse, so the extra width is invisible.
+    private static let voiceOverlayWidth: CGFloat = 680
 
     private func positionVoiceOverlay(_ panel: NSPanel) {
         let screen = screenContaining(point: NSEvent.mouseLocation) ?? NSScreen.main
