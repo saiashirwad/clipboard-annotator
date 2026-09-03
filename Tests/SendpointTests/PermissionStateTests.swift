@@ -60,6 +60,23 @@ final class PermissionStateTests: XCTestCase {
         }
     }
 
+    private actor MicrophoneRequestGate {
+        private var continuation: CheckedContinuation<Bool, Never>?
+        private(set) var count = 0
+
+        func next() async -> Bool {
+            count += 1
+            return await withCheckedContinuation { continuation in
+                self.continuation = continuation
+            }
+        }
+
+        func resume(with granted: Bool) {
+            continuation?.resume(returning: granted)
+            continuation = nil
+        }
+    }
+
     private final class BoolBox: @unchecked Sendable {
         private let lock = NSLock()
         private var storedValue: Bool
@@ -229,6 +246,44 @@ final class PermissionStateTests: XCTestCase {
         await denied.waitForIdle()
         XCTAssertEqual(denied.accessibility, .notGranted)
         XCTAssertEqual(denied.microphone, .denied)
+    }
+
+    func testRefreshDuringMicrophoneRequestKeepsCheckingState() async {
+        let accessibilityGate = AccessibilityGate()
+        let microphoneRequestGate = MicrophoneRequestGate()
+        let microphoneStatusCalls = Counter()
+        var injected = services(microphone: .notDetermined)
+        injected.accessibilityStatus = { await accessibilityGate.next() }
+        injected.microphoneStatus = {
+            let call = await microphoneStatusCalls.incrementAndGet()
+            return call == 1 ? .notDetermined : .denied
+        }
+        injected.requestMicrophone = { await microphoneRequestGate.next() }
+        let state = PermissionState(services: injected)
+
+        state.refresh()
+        await waitUntil { await accessibilityGate.count == 1 }
+        await accessibilityGate.resume(at: 0, with: .granted)
+        await state.waitForIdle()
+        XCTAssertEqual(state.microphone, .notDetermined)
+
+        state.requestMicrophone()
+        await waitUntil { await microphoneRequestGate.count == 1 }
+        state.refresh()
+        await waitUntil {
+            let accessibilityCount = await accessibilityGate.count
+            let microphoneCount = await microphoneStatusCalls.value
+            return accessibilityCount == 2 && microphoneCount == 2
+        }
+        await accessibilityGate.resume(at: 1, with: .notGranted)
+        await waitUntil { state.accessibility == .notGranted }
+
+        XCTAssertEqual(state.microphone, .checking)
+
+        await microphoneRequestGate.resume(with: true)
+        await state.waitForIdle()
+        XCTAssertEqual(state.microphone, .granted)
+        state.teardown()
     }
 
     func testLocalVoiceModelReadinessIncludesFilesPersistedAcrossLaunch() async {

@@ -194,6 +194,7 @@ final class PermissionState {
         let appliesAccessibility = accessibilityRefreshTask == nil
             && accessibilityRequestTask == nil
         let microphoneID = microphoneGeneration
+        let appliesMicrophone = microphoneRequestTask == nil
         let services = services
 
         // Model readiness is an on-disk fact. Read it without joining the
@@ -214,6 +215,7 @@ final class PermissionState {
                 accessibilityID: accessibilityID,
                 appliesAccessibility: appliesAccessibility,
                 microphoneID: microphoneID,
+                appliesMicrophone: appliesMicrophone,
                 accessibility: result.0,
                 microphone: result.1
             )
@@ -418,6 +420,7 @@ final class PermissionState {
         accessibilityID: Int,
         appliesAccessibility: Bool,
         microphoneID: Int,
+        appliesMicrophone: Bool,
         accessibility: AccessibilityPermissionState,
         microphone: MicrophonePermissionState
     ) {
@@ -426,7 +429,7 @@ final class PermissionState {
         if appliesAccessibility, accessibilityGeneration == accessibilityID {
             self.accessibility = accessibility
         }
-        if microphoneGeneration == microphoneID {
+        if appliesMicrophone, microphoneGeneration == microphoneID {
             self.microphone = microphone
         }
     }
