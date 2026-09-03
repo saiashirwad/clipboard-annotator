@@ -56,6 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings.onProfilesChanged = { [weak self] in self?.refreshStatusItem() }
         registerHotKeys()
         permissionState.refresh()
+        AutomaticSelectionMonitor.shared.start()
 
         bootstrapStore()
 
@@ -155,6 +156,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         stackWindow = nil
         captureController.teardown()
         permissionState.teardown()
+        AutomaticSelectionMonitor.shared.teardown()
         store?.teardown()
         if let captureObserver {
             NotificationCenter.default.removeObserver(captureObserver)

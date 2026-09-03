@@ -16,6 +16,7 @@ struct CapturedSelection {
 ///     leaves the clipboard alone, but some apps (many Electron ones, Chrome
 ///     with web accessibility off) do not answer.
 ///  2. Synthesise ⌘C, read the pasteboard, then put the old pasteboard back.
+@MainActor
 enum SelectionCapture {
 
     /// How far to go when Accessibility reports no selection.
@@ -33,17 +34,23 @@ enum SelectionCapture {
 
     static func capture(fallback: FallbackPolicy = .patient) -> CapturedSelection {
         let app = NSWorkspace.shared.frontmostApplication
+        let processIdentifier = app?.processIdentifier ?? 0
         var rect: CGRect?
         var text = ""
+        defer { AutomaticSelectionMonitor.shared.discard() }
 
         if let (axText, axRect) = accessibilitySelection() {
             text = axText
             rect = axRect
         }
         if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            text = copyViaKeystroke(
-                processIdentifier: app?.processIdentifier ?? 0,
+            text = AutomaticSelectionMonitor.shared.takeSelection(
+                for: processIdentifier
+            ) ?? copyViaKeystroke(
+                processIdentifier: processIdentifier,
                 fallback: fallback
+            ) ?? AutomaticSelectionMonitor.shared.takeSelection(
+                for: processIdentifier
             ) ?? ""
         }
 
