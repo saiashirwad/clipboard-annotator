@@ -831,7 +831,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 onComplete: { [weak self] in
                     guard let self else { return }
                     self.setupWindowController?.close()
-                    self.flashStatus("Hold \(self.settings.voiceCaptureCombo.displayString) to talk, or tap twice to save")
+                    self.flashStatus("\(self.settings.voiceCaptureCombo.displayString): hold or tap twice · Esc cancels")
                 }
             )
         }
