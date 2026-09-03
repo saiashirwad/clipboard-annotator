@@ -1,6 +1,33 @@
 import AppKit
 import SwiftUI
 
+enum PermissionCapabilityScope: Equatable {
+    case setup
+    case voice
+    case accessibility
+
+    var showsAccessibility: Bool {
+        switch self {
+        case .setup, .accessibility: true
+        case .voice: false
+        }
+    }
+
+    var showsMicrophone: Bool {
+        switch self {
+        case .setup, .voice: true
+        case .accessibility: false
+        }
+    }
+
+    var showsVoiceModel: Bool {
+        switch self {
+        case .setup, .voice: true
+        case .accessibility: false
+        }
+    }
+}
+
 struct SetupView: View {
     @Bindable var settings: AppSettings
     @Bindable var permissionState: PermissionState
@@ -38,7 +65,8 @@ struct SetupView: View {
 
                 PermissionCapabilityList(
                     permissionState: permissionState,
-                    onShowAccessibilityHelper: onShowAccessibilityHelper
+                    onShowAccessibilityHelper: onShowAccessibilityHelper,
+                    scope: .setup
                 )
 
                 shortcutGuide
@@ -156,30 +184,52 @@ private struct SetupIcon: View {
 struct PermissionCapabilityList: View {
     @Bindable var permissionState: PermissionState
     let onShowAccessibilityHelper: () -> Void
+    let scope: PermissionCapabilityScope
 
     init(
         permissionState: PermissionState,
-        onShowAccessibilityHelper: @escaping () -> Void
+        onShowAccessibilityHelper: @escaping () -> Void,
+        scope: PermissionCapabilityScope = .setup
     ) {
         _permissionState = Bindable(wrappedValue: permissionState)
         self.onShowAccessibilityHelper = onShowAccessibilityHelper
+        self.scope = scope
     }
 
     var body: some View {
+        if scope.showsVoiceModel {
+            capabilityRows
+                .task {
+                    await permissionState.watchVoiceModel()
+                }
+        } else {
+            capabilityRows
+        }
+    }
+
+    @ViewBuilder
+    private var capabilityRows: some View {
         VStack(spacing: 0) {
-            accessibilityRow
-            Divider().padding(.leading, 46)
-            microphoneRow
-            Divider().padding(.leading, 46)
-            voiceModelRow
+            if scope.showsAccessibility {
+                accessibilityRow
+            }
+            if scope.showsMicrophone {
+                if scope.showsAccessibility {
+                    Divider().padding(.leading, 46)
+                }
+                microphoneRow
+            }
+            if scope.showsVoiceModel {
+                if scope.showsAccessibility || scope.showsMicrophone {
+                    Divider().padding(.leading, 46)
+                }
+                voiceModelRow
+            }
         }
         .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
         .overlay {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(.separator.opacity(0.65))
-        }
-        .task {
-            await permissionState.watchVoiceModel()
         }
     }
 

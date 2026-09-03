@@ -303,7 +303,12 @@ struct SettingsView: View {
                         slot: .voiceCapture
                     )
                 }
-                Text("Press Escape in the voice panel to discard the recording. Microphone and local model access are managed in Permissions.")
+                PermissionCapabilityList(
+                    permissionState: permissionState,
+                    onShowAccessibilityHelper: onShowAccessibilityHelper,
+                    scope: .voice
+                )
+                Text("Press Escape in the voice panel to discard the recording.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -451,7 +456,8 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 14) {
             PermissionCapabilityList(
                 permissionState: permissionState,
-                onShowAccessibilityHelper: onShowAccessibilityHelper
+                onShowAccessibilityHelper: onShowAccessibilityHelper,
+                scope: .accessibility
             )
             SettingsCard {
                 SettingsRow(
