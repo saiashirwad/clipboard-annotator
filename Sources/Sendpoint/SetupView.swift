@@ -199,7 +199,7 @@ struct PermissionCapabilityList: View {
         CapabilityRow(
             icon: "mic",
             title: "Microphone",
-            reason: "Needed for voice notes. Sendpoint records only while you hold the voice note shortcut.",
+            reason: "Needed for voice notes. Sendpoint records only while a voice note is active.",
             status: microphoneStatus,
             actionTitle: microphoneActionTitle,
             showsProgress: permissionState.microphone == .checking,
