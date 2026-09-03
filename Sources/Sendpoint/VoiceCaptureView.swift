@@ -35,7 +35,8 @@ struct VoiceCaptureView: View {
         .environment(\.colorScheme, .dark)
         .padding(28)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Voice annotation: \(title)")
+        .accessibilityLabel("Voice note: \(title)")
+        .accessibilityValue(subtitle ?? "")
     }
 
     // MARK: - Indicator
@@ -82,7 +83,10 @@ struct VoiceCaptureView: View {
 
     private var subtitle: String? {
         switch model.phase {
-        case .selecting, .starting, .recording: "Release to save"
+        case .selecting, .starting, .recording:
+            model.isLatched
+                ? "Tap again to save · Esc to discard"
+                : "Release, or tap once then again, to save · Esc to discard"
         case .transcribing(.preparingModel): "First time only"
         case .transcribing(.transcribing): "Saving to your stack"
         case .failed, .dismissed: nil

@@ -20,54 +20,136 @@ struct SetupView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            VStack(spacing: 10) {
-                Image(nsImage: NSApp.applicationIconImage)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 72, height: 72)
-                    .accessibilityHidden(true)
-                Text("Set Up Sendpoint")
-                    .font(.largeTitle.weight(.semibold))
-                Text("Capture selected text from any app. Accessibility enables capture; voice is optional.")
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-            .padding(.bottom, 24)
-
-            PermissionCapabilityList(
-                permissionState: permissionState,
-                onShowAccessibilityHelper: onShowAccessibilityHelper
-            )
-
-            VStack(spacing: 14) {
-                Label {
-                    Text("Selected text, notes, audio, transcription, provenance, and voice-model work stay on this Mac.")
-                } icon: {
-                    Image(systemName: "lock.shield")
+        ScrollView(.vertical) {
+            VStack(spacing: 0) {
+                VStack(spacing: 10) {
+                    Image(nsImage: NSApp.applicationIconImage)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 72, height: 72)
+                        .accessibilityHidden(true)
+                    Text("Set Up Sendpoint")
+                        .font(.largeTitle.weight(.semibold))
+                    Text("Voice note is the fast way to capture a thought. Hold its shortcut to speak and release to save, or tap once to start and tap again to save.")
                         .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
                 }
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+                .padding(.bottom, 24)
 
-                Button(primaryButtonTitle) {
-                    settings.completeSetup()
-                    onComplete()
+                PermissionCapabilityList(
+                    permissionState: permissionState,
+                    onShowAccessibilityHelper: onShowAccessibilityHelper
+                )
+
+                shortcutGuide
+
+                VStack(spacing: 14) {
+                    Label {
+                        Text("Selected text, notes, audio, transcription, and voice-model work stay on this Mac.")
+                    } icon: {
+                        Image(systemName: "lock.shield")
+                            .foregroundStyle(.secondary)
+                    }
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                    Button(primaryButtonTitle) {
+                        settings.completeSetup()
+                        onComplete()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(!permissionState.isTextCaptureReady)
+                    .keyboardShortcut(.defaultAction)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .disabled(!permissionState.isTextCaptureReady)
-                .keyboardShortcut(.defaultAction)
+                .padding(.top, 24)
             }
-            .padding(.top, 24)
+            .padding(30)
+            .frame(width: 640)
         }
-        .padding(30)
-        .frame(width: 640)
+        .frame(width: 640, height: 620)
+        .scrollIndicators(.automatic)
     }
 
     private var primaryButtonTitle: String {
-        permissionState.isVoiceReady ? "Continue" : "Use Text Capture for Now"
+        "Continue"
+    }
+
+    private var shortcutGuide: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Your shortcuts")
+                .font(.headline)
+            SetupCard {
+                HStack(spacing: 12) {
+                    SetupIcon("mic.fill")
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Voice note")
+                            .font(.body.weight(.medium))
+                        Text("Hold to speak and release to save, or tap once to start and tap again to save.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 8)
+                    Keycap(settings.voiceCaptureCombo.displayString)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+
+                Divider().padding(.leading, 56)
+
+                HStack(spacing: 12) {
+                    SetupIcon("text.viewfinder")
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Typed note")
+                            .font(.body.weight(.medium))
+                        Text("Press to open a note box for selected text.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 8)
+                    Keycap(settings.captureCombo.displayString)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+            }
+            Text("Accessibility is required to read selected text for either kind of note.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct SetupCard<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        VStack(spacing: 0) {
+            content()
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+        )
+    }
+}
+
+private struct SetupIcon: View {
+    let name: String
+
+    init(_ name: String) { self.name = name }
+
+    var body: some View {
+        Image(systemName: name)
+            .font(.system(size: 14, weight: .medium))
+            .foregroundStyle(.tint)
+            .frame(width: 30, height: 30)
+            .background(.tint.opacity(0.1), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .accessibilityHidden(true)
     }
 }
 
@@ -105,7 +187,7 @@ struct PermissionCapabilityList: View {
         CapabilityRow(
             icon: "text.viewfinder",
             title: "Accessibility",
-            reason: "Reads the text you select in other apps. Required for capture.",
+            reason: "Reads selected text in other apps. Required for typed notes and voice notes.",
             status: accessibilityStatus,
             actionTitle: accessibilityActionTitle,
             showsProgress: permissionState.accessibility == .checking,
@@ -117,7 +199,7 @@ struct PermissionCapabilityList: View {
         CapabilityRow(
             icon: "mic",
             title: "Microphone",
-            reason: "Records only while you hold the voice shortcut. Optional.",
+            reason: "Needed for voice notes. Sendpoint records only while you hold the voice note shortcut.",
             status: microphoneStatus,
             actionTitle: microphoneActionTitle,
             showsProgress: permissionState.microphone == .checking,
@@ -129,7 +211,7 @@ struct PermissionCapabilityList: View {
         CapabilityRow(
             icon: "waveform",
             title: "Local voice model",
-            reason: "Transcribes voice annotations on this Mac. Optional. A one-time 460 MB download.",
+            reason: "Needed for voice notes. Downloads on first use or when you choose Download Model. A one-time 460 MB download.",
             status: voiceModelStatus,
             actionTitle: voiceModelActionTitle,
             showsProgress: voiceModelIsDownloading,

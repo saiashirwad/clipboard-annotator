@@ -200,8 +200,14 @@ struct StackView: View {
                 Text("Nothing captured yet")
                     .font(.title3.weight(.semibold))
                 HStack(spacing: 5) {
-                    Text("Highlight text in any app, then press")
+                    Text("Hold")
+                    Keycap(settings.voiceCaptureCombo.displayString, size: 12)
+                    Text("to speak a voice note and release to save, or tap once to start and again to save")
+                }
+                HStack(spacing: 5) {
+                    Text("Or press")
                     Keycap(settings.captureCombo.displayString, size: 12)
+                    Text("to type a note about selected text")
                 }
                 .font(.callout)
                 .foregroundStyle(.secondary)

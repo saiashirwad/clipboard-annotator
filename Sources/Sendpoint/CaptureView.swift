@@ -23,6 +23,13 @@ struct CaptureView: View {
                 quoteBlock
             }
             noteEditor
+            if case .editing = model.savePhase {
+                HStack(spacing: 12) {
+                    ShortcutHint(keys: "⌘↩", label: "Save")
+                    ShortcutHint(keys: "esc", label: "Discard")
+                    Spacer()
+                }
+            }
             saveStatus
         }
         .padding(14)

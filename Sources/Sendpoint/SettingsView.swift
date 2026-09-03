@@ -3,15 +3,17 @@ import SendpointDomain
 import SwiftUI
 
 enum SettingsTab: String, CaseIterable, Identifiable {
-    case profiles
+    case voice
     case shortcuts
     case capture
     case permissions
+    case profiles
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
+        case .voice: "Voice"
         case .profiles: "Profiles"
         case .shortcuts: "Shortcuts"
         case .capture: "Capture"
@@ -21,6 +23,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 
     var icon: String {
         switch self {
+        case .voice: "mic.fill"
         case .profiles: "text.quote"
         case .shortcuts: "keyboard"
         case .capture: "cursorarrow.click.2"
@@ -30,6 +33,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 
     var tint: Color {
         switch self {
+        case .voice: Color(red: 0.95, green: 0.32, blue: 0.28)
         case .profiles: Color(red: 0.55, green: 0.36, blue: 0.96)
         case .shortcuts: Color(red: 0.36, green: 0.36, blue: 0.40)
         case .capture: Color(red: 0.20, green: 0.68, blue: 0.40)
@@ -46,7 +50,7 @@ struct SettingsView: View {
     let onShowAccessibilityHelper: () -> Void
     let onRunSetup: () -> Void
 
-    @State private var tab: SettingsTab = .profiles
+    @State private var tab: SettingsTab = .voice
     @State private var newProfile: NewProfileDraft?
 
     private struct NewProfileDraft: Equatable {
@@ -89,6 +93,7 @@ struct SettingsView: View {
                 ScrollView {
                     Group {
                         switch tab {
+                        case .voice: voiceTab
                         case .profiles: profilesTab
                         case .shortcuts: shortcutsTab
                         case .capture: captureTab
@@ -266,21 +271,38 @@ struct SettingsView: View {
 
     // MARK: - Shortcuts
 
+    private var voiceTab: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 8) {
+                SettingsCaption("Voice note")
+                SettingsCard {
+                    shortcutRow(
+                        icon: "mic.fill",
+                        title: "Voice note",
+                        detail: "Hold the shortcut to speak and release to save, or tap once to start and tap again to save.",
+                        combo: $settings.voiceCaptureCombo
+                    )
+                }
+                Text("Press Escape in the voice panel to discard the recording. Microphone and local model access are managed in Permissions.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
     private var shortcutsTab: some View {
         VStack(alignment: .leading, spacing: 14) {
+            Text("Voice note has its own section. These shortcuts cover typed notes and the rest of Sendpoint.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             SettingsCard {
                 shortcutRow(
                     icon: "text.viewfinder",
-                    title: "Capture selection",
-                    detail: "Opens the note box for the text you have selected.",
+                    title: "Typed note",
+                    detail: "Opens a note box for the text you have selected.",
                     combo: $settings.captureCombo
-                )
-                Divider().padding(.leading, 56)
-                shortcutRow(
-                    icon: "mic.fill",
-                    title: "Voice annotation",
-                    detail: "Hold to speak, release to transcribe and save.",
-                    combo: $settings.voiceCaptureCombo
                 )
                 Divider().padding(.leading, 56)
                 shortcutRow(
@@ -311,7 +333,7 @@ struct SettingsView: View {
                     combo: $settings.clearCombo
                 )
             }
-            Text("Click a shortcut, then press the keys you want. Press esc to keep the old one.")
+            Text("Click a shortcut, then press the keys you want. Press Escape to keep the old one. Some system shortcuts may not be available.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -394,7 +416,7 @@ struct SettingsView: View {
                 }
             }
             Label {
-                Text("Accessibility is required for capture. Voice annotations are optional. The voice model is a one-time 460 MB download from Hugging Face, and audio and transcription never leave this Mac.")
+                Text("Accessibility is required for capture, including voice notes. The local voice model downloads on first voice note or from this screen; audio and transcription never leave this Mac.")
             } icon: {
                 Image(systemName: "lock.shield")
             }
