@@ -453,6 +453,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Hot keys
 
     private func registerHotKeys() {
+        // Carbon can drop the old key-up while a shortcut is being replaced.
+        // Reset the trigger before installing the new registration so an old
+        // release cannot strand the machine in comboHeld.
+        handleVoiceTrigger(.shortcutConfigurationChanged)
         var issues: [ShortcutRegistrationIssue] = []
 
         func register(
@@ -814,7 +818,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 onComplete: { [weak self] in
                     guard let self else { return }
                     self.setupWindowController?.close()
-                    self.flashStatus("Hold \(self.settings.voiceCaptureCombo.displayString) to talk")
+                    self.flashStatus("Hold \(self.settings.voiceCaptureCombo.displayString) to talk, or tap twice to save")
                 }
             )
         }

@@ -6,6 +6,17 @@ import SwiftUI
 struct VoiceCaptureView: View {
     @Bindable var model: VoiceCaptureModel
     let meter: VoiceLevelMeter
+    let shortcut: KeyCombo
+
+    init(
+        model: VoiceCaptureModel,
+        meter: VoiceLevelMeter,
+        shortcut: KeyCombo = .optionSpace
+    ) {
+        self.model = model
+        self.meter = meter
+        self.shortcut = shortcut
+    }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -85,8 +96,8 @@ struct VoiceCaptureView: View {
         switch model.phase {
         case .selecting, .starting, .recording:
             model.isLatched
-                ? "Tap again to save · Esc to discard"
-                : "Release, or tap once then again, to save · Esc to discard"
+                ? "Tap (shortcut.displayString) again to save · Esc to discard"
+                : "Release to save · Esc to discard"
         case .transcribing(.preparingModel): "First time only"
         case .transcribing(.transcribing): "Saving to your stack"
         case .failed, .dismissed: nil

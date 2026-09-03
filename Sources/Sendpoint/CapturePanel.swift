@@ -29,6 +29,7 @@ final class CaptureController {
     private var voicePanel: CapturePanel?
     private var voiceModel: VoiceCaptureModel?
     private var voiceKeyMonitor: Any?
+    private var voiceEscapeMonitor: Any?
     private var previousApp: NSRunningApplication?
     private var voiceStartupTask: Task<Void, Never>?
     private var voiceTranscriptionTask: Task<Void, Never>?
@@ -151,6 +152,9 @@ final class CaptureController {
                       case .selecting = model.phase
                 else {
                     VoiceAnnotationService.shared.discardRecording()
+                    if voiceModel === model {
+                        teardownVoice(returnFocus: true)
+                    }
                     return
                 }
                 _ = model.recordingStarted()
@@ -162,6 +166,9 @@ final class CaptureController {
         let captured = SelectionCapture.capture(fallback: .brief)
         guard voiceModel === model, model.phase != .dismissed else {
             VoiceAnnotationService.shared.discardRecording()
+            if voiceModel === model {
+                teardownVoice(returnFocus: true)
+            }
             return
         }
 
@@ -274,19 +281,23 @@ final class CaptureController {
 
         let hosting = NSHostingView(rootView: VoiceCaptureView(
             model: model,
-            meter: VoiceAnnotationService.shared.levelMeter
+            meter: VoiceAnnotationService.shared.levelMeter,
+            shortcut: settings.voiceCaptureCombo
         ))
         panel.contentView = hosting
         panel.setContentSize(hosting.fittingSize)
         positionVoiceOverlay(panel)
         voicePanel = panel
         installVoiceKeyMonitor()
-        HotKeyCenter.shared.registerRaw(
+        let escapeRegistration = HotKeyCenter.shared.registerRaw(
             name: "voiceEscape",
             keyCode: 53,
             carbonModifiers: 0,
             pressed: { [weak self] in self?.onVoiceEscape?() }
         )
+        if case .failed = escapeRegistration {
+            installVoiceEscapeFallback()
+        }
         panel.orderFrontRegardless()
     }
 
@@ -369,15 +380,46 @@ final class CaptureController {
         voiceKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self, let panel = self.voicePanel, event.window === panel else { return event }
             if event.keyCode == 53 { // escape
-                if let onVoiceEscape = self.onVoiceEscape {
-                    onVoiceEscape()
-                } else {
-                    self.teardownVoice(returnFocus: true)
-                }
+                self.escapeWhileRecording()
                 return nil
             }
             return event
         }
+    }
+
+    /// Carbon Escape is preferred because it can consume the event without
+    /// taking focus. If registration fails, this passive monitor still lets
+    /// Escape cancel a recording from another app; the front app also sees it.
+    private func installVoiceEscapeFallback() {
+        voiceEscapeMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard event.keyCode == 53 else { return }
+            DispatchQueue.main.async { [weak self] in
+                self?.escapeWhileRecording()
+            }
+        }
+        if voiceEscapeMonitor == nil {
+            Diag.log("voice Escape fallback monitor unavailable; Escape cancel works only when Sendpoint is active")
+        }
+    }
+
+    private func escapeWhileRecording() {
+        guard let model = voiceModel else { return }
+        switch model.phase {
+        case .selecting, .starting, .recording:
+            if let onVoiceEscape {
+                onVoiceEscape()
+            } else {
+                teardownVoice(returnFocus: true)
+            }
+        case .transcribing, .failed, .dismissed:
+            break
+        }
+    }
+
+    private func removeVoiceEscapeHandling() {
+        HotKeyCenter.shared.unregister(name: "voiceEscape")
+        if let voiceEscapeMonitor { NSEvent.removeMonitor(voiceEscapeMonitor) }
+        voiceEscapeMonitor = nil
     }
 
     // MARK: - Finish
@@ -454,7 +496,7 @@ final class CaptureController {
 
         // Escape is a recording cancel key. Once transcription owns the
         // capture, let the front app receive Escape normally.
-        HotKeyCenter.shared.unregister(name: "voiceEscape")
+        removeVoiceEscapeHandling()
         voiceStartupTask?.cancel()
         voiceStartupTask = nil
         let identity = model.identity
@@ -718,7 +760,7 @@ final class CaptureController {
         voiceFailureTask = nil
         VoiceAnnotationService.shared.discardRecording()
 
-        HotKeyCenter.shared.unregister(name: "voiceEscape")
+        removeVoiceEscapeHandling()
         if let voiceKeyMonitor { NSEvent.removeMonitor(voiceKeyMonitor) }
         voiceKeyMonitor = nil
         voicePanel?.onClose = nil
