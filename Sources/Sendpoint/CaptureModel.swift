@@ -197,22 +197,20 @@ final class CaptureModel {
             savePhase = .committed
             return .dismiss
         case .noOp:
-            savePhase = .terminalSaveFailure(message: "The annotation was not saved.")
+            savePhase = .terminalSaveFailure(message: "The note wasn’t saved.")
             return .none
         case let .rejected(message):
-            let missingDestinationMessage = identity.destinationSessionID == target.sessionID
-                ? "The original session was deleted."
-                : "The selected session was deleted."
+            let missingDestinationMessage = "That stack was deleted."
             savePhase = destinationStillExists
                 ? .terminalSaveFailure(
-                    message: "The annotation could not be saved: \(message)"
+                    message: "Couldn’t save the note: \(message)"
                 )
                 : .targetUnavailable(message: missingDestinationMessage)
             return .none
         case let .commitFailed(message):
             savePhase = .retryableCommitFailure(
                 identity: identity,
-                message: "Couldn’t save the annotation: \(message)"
+                message: "Couldn’t save the note: \(message)"
             )
             return .none
         case .cancelled:

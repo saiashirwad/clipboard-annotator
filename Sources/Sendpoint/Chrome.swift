@@ -46,12 +46,13 @@ struct ShortcutHint: View {
 /// Soft inset surface used for quotes and fields.
 struct InsetSurface: ViewModifier {
     var radius: CGFloat = 8
+    var fill: Color = Color.primary.opacity(0.045)
 
     func body(content: Content) -> some View {
         content
             .background(
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .fill(Color.primary.opacity(0.045))
+                    .fill(fill)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: radius, style: .continuous)
@@ -61,8 +62,8 @@ struct InsetSurface: ViewModifier {
 }
 
 extension View {
-    func insetSurface(radius: CGFloat = 8) -> some View {
-        modifier(InsetSurface(radius: radius))
+    func insetSurface(radius: CGFloat = 8, fill: Color = Color.primary.opacity(0.045)) -> some View {
+        modifier(InsetSurface(radius: radius, fill: fill))
     }
 }
 

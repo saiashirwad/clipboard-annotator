@@ -34,7 +34,7 @@ final class CaptureSaveLifecycleTests: XCTestCase {
             model.savePhase,
             .retryableCommitFailure(
                 identity: request.identity,
-                message: "Couldn’t save the annotation: disk full"
+                message: "Couldn’t save the note: disk full"
             )
         )
         XCTAssertEqual(model.note, "Keep this draft")
@@ -98,7 +98,7 @@ final class CaptureSaveLifecycleTests: XCTestCase {
         )
         XCTAssertEqual(
             model.savePhase,
-            .targetUnavailable(message: "The original session was deleted.")
+            .targetUnavailable(message: "That stack was deleted.")
         )
         XCTAssertEqual(model.note, "Draft")
         XCTAssertEqual(model.annotation, annotation)
@@ -123,7 +123,7 @@ final class CaptureSaveLifecycleTests: XCTestCase {
         )
         XCTAssertEqual(
             model.savePhase,
-            .targetUnavailable(message: "The selected session was deleted.")
+            .targetUnavailable(message: "That stack was deleted.")
         )
     }
 
@@ -146,7 +146,7 @@ final class CaptureSaveLifecycleTests: XCTestCase {
         XCTAssertEqual(
             model.savePhase,
             .terminalSaveFailure(
-                message: "The annotation could not be saved: The annotation already exists."
+                message: "Couldn’t save the note: The annotation already exists."
             )
         )
         XCTAssertNil(model.beginRetarget(destinationSessionID: UUID()))

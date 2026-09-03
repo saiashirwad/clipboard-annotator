@@ -9,7 +9,7 @@ struct SessionItemFacts: Equatable, Identifiable {
     let isCurrent: Bool
 
     var countLabel: String {
-        "\(annotationCount) annotation\(annotationCount == 1 ? "" : "s")"
+        "\(annotationCount) note\(annotationCount == 1 ? "" : "s")"
     }
 }
 
@@ -79,7 +79,7 @@ struct SessionUIFacts: Equatable {
     }
 
     var currentTitle: String {
-        guard let current else { return "Session Unavailable" }
+        guard let current else { return "Stack Unavailable" }
         return "\(current.name) — \(current.countLabel)"
     }
 
@@ -102,14 +102,14 @@ struct SessionNameDraft: Equatable {
     func validation(sessions: [Session]) -> SessionNameValidation {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let normalized = SessionDocumentMutations.normalizedSessionName(trimmed) else {
-            return .invalid("Enter a session name.")
+            return .invalid("Enter a stack name.")
         }
         let duplicate = sessions.contains {
             $0.id != excludedSessionID
                 && SessionDocumentMutations.normalizedSessionName($0.name) == normalized
         }
         guard !duplicate else {
-            return .invalid("A session with that name already exists.")
+            return .invalid("A stack with that name already exists.")
         }
         return .valid(trimmed)
     }
@@ -226,8 +226,8 @@ struct QuickSwitchState: Equatable {
 enum SessionDialogs {
     static func requestNewSessionName(sessions: [Session]) -> String? {
         requestName(
-            title: "New Session",
-            prompt: "Enter a name for the new session.",
+            title: "New Stack",
+            prompt: "Name the new stack.",
             initialValue: "",
             sessions: sessions,
             excluding: nil
@@ -236,12 +236,12 @@ enum SessionDialogs {
 
     static func requestRenamedSessionName(sessionID: UUID, sessions: [Session]) -> String? {
         guard let session = sessions.first(where: { $0.id == sessionID }) else {
-            showMessage("The session no longer exists.")
+            showMessage("That stack no longer exists.")
             return nil
         }
         return requestName(
-            title: "Rename Session",
-            prompt: "Enter a new name for “\(session.name)”.",
+            title: "Rename Stack",
+            prompt: "New name for “\(session.name)”.",
             initialValue: session.name,
             sessions: sessions,
             excluding: sessionID
@@ -254,11 +254,11 @@ enum SessionDialogs {
         lastCleared: ClearedBatch?
     ) -> Bool {
         guard sessions.count > 1 else {
-            showMessage("The last session cannot be deleted.")
+            showMessage("The last stack cannot be deleted.")
             return false
         }
         guard let session = sessions.first(where: { $0.id == sessionID }) else {
-            showMessage("The session no longer exists.")
+            showMessage("That stack no longer exists.")
             return false
         }
         let deletion = SessionDeletionFacts(
@@ -272,10 +272,10 @@ enum SessionDialogs {
         alert.alertStyle = .warning
         alert.messageText = "Delete “\(session.name)”?"
         let undoWarning = deletion.includesUndoBatch
-            ? " Cleared annotations waiting to be undone will also be deleted."
+            ? " Cleared notes waiting to be undone are deleted too."
             : ""
         let count = deletion.annotationCount
-        alert.informativeText = "This will delete \(count) annotation\(count == 1 ? "" : "s").\(undoWarning) This cannot be undone."
+        alert.informativeText = "This deletes \(count) note\(count == 1 ? "" : "s").\(undoWarning) This cannot be undone."
         alert.addButton(withTitle: "Delete")
         alert.addButton(withTitle: "Cancel")
         return alert.runModal() == .alertFirstButtonReturn
@@ -300,7 +300,7 @@ enum SessionDialogs {
     static func showMessage(_ message: String) {
         let alert = NSAlert()
         alert.alertStyle = .informational
-        alert.messageText = "Session Change Failed"
+        alert.messageText = "Couldn't Change Stack"
         alert.informativeText = message
         alert.addButton(withTitle: "OK")
         alert.runModal()
@@ -320,11 +320,11 @@ enum SessionDialogs {
             let alert = NSAlert()
             alert.messageText = title
             alert.informativeText = validationMessage ?? prompt
-            alert.addButton(withTitle: title == "New Session" ? "Create" : "Rename")
+            alert.addButton(withTitle: title == "New Stack" ? "Create" : "Rename")
             alert.addButton(withTitle: "Cancel")
 
             let field = NSTextField(string: value)
-            field.placeholderString = "Session name"
+            field.placeholderString = "Stack name"
             field.frame = NSRect(x: 0, y: 0, width: 300, height: 24)
             alert.accessoryView = field
             alert.window.initialFirstResponder = field
@@ -348,8 +348,8 @@ func annotationStoreErrorMessage(_ error: AnnotationStoreError) -> String {
     case let .mutationRejected(message):
         return message
     case let .commitFailed(message):
-        return "Could not save the session change: \(message)"
+        return "Couldn't save the stack change: \(message)"
     case .tornDown:
-        return "Session storage is no longer available."
+        return "Stack storage is no longer available."
     }
 }

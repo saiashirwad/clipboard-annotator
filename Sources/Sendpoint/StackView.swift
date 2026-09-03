@@ -101,7 +101,7 @@ struct StackView: View {
             .keyboardShortcut("c", modifiers: [.command, .shift])
             .disabled(entries.isEmpty)
             .animation(.easeOut(duration: 0.15), value: justCopied)
-            .help("Copy the session as Markdown, shaped by the active profile (⇧⌘C)")
+            .help("Copy this stack as Markdown, shaped by the active template (⇧⌘C)")
         }
         .padding(.leading, 84) // clear of the traffic lights
         .padding(.trailing, 16)
@@ -112,21 +112,21 @@ struct StackView: View {
 
     private func sessionMenu(_ session: Session) -> some View {
         Menu {
-            Section("Sessions") {
+            Section("Stacks") {
                 ForEach(facts.sessions) { item in
                     Button {
                         store.mutate(.switchSession(sessionID: item.id))
                     } label: {
                         if item.isCurrent {
-                            Label("\(item.name)  (\(item.annotationCount))", systemImage: "checkmark")
+                            Label("\(item.name) — \(item.annotationCount) note\(item.annotationCount == 1 ? "" : "s")", systemImage: "checkmark")
                         } else {
-                            Text("\(item.name)  (\(item.annotationCount))")
+                            Text("\(item.name) — \(item.annotationCount) note\(item.annotationCount == 1 ? "" : "s")")
                         }
                     }
                 }
             }
             Divider()
-            Button("New Session…", action: createSession)
+            Button("New Stack…", action: createSession)
             Button("Rename “\(session.name)”…") { renameSession(sessionID: session.id) }
             Button("Delete “\(session.name)”…", role: .destructive) {
                 deleteSession(sessionID: session.id)
@@ -149,7 +149,7 @@ struct StackView: View {
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize()
-        .help("Switch, create, rename, or delete sessions")
+        .help("Switch, create, rename, or delete stacks")
     }
 
     private var profileMenu: some View {
@@ -185,7 +185,7 @@ struct StackView: View {
         .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize()
-        .help("Active prompt profile")
+        .help("Active template")
     }
 
     // MARK: - States
@@ -202,7 +202,7 @@ struct StackView: View {
                 HStack(spacing: 5) {
                     Text("Hold")
                     Keycap(settings.voiceCaptureCombo.displayString, size: 12)
-                    Text("to speak a voice note and release to save, or tap once to start and again to save")
+                    Text("to speak and release to save, or tap it once to start and again to save")
                 }
                 HStack(spacing: 5) {
                     Text("Or press")
@@ -225,7 +225,7 @@ struct StackView: View {
             VStack(spacing: 5) {
                 Text("Stack cleared")
                     .font(.title3.weight(.semibold))
-                Text("\(undoCount) annotation\(undoCount == 1 ? "" : "s") set aside.")
+                Text("\(undoCount) note\(undoCount == 1 ? "" : "s") set aside.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -309,7 +309,7 @@ struct StackView: View {
         let renderedSessionID = renderedSession.id
 
         return HStack(spacing: 6) {
-            Text("\(entries.count) annotation\(entries.count == 1 ? "" : "s")")
+            Text("\(entries.count) note\(entries.count == 1 ? "" : "s")")
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
 
@@ -331,7 +331,7 @@ struct StackView: View {
             }
             .keyboardShortcut(.delete, modifiers: [.control, .command])
             .disabled(entries.isEmpty)
-            .help("Clear this session. Undo with ⌘Z.")
+            .help("Clear this stack. Undo with ⌘Z.")
         }
         .buttonStyle(.borderless)
         .controlSize(.small)
@@ -450,7 +450,7 @@ private struct StackRow: View {
                 }
                 .buttonStyle(.plain)
                 .help("Remove")
-                .accessibilityLabel("Remove annotation \(index + 1)")
+                .accessibilityLabel("Remove note \(index + 1)")
                 .opacity(hovering ? 1 : 0)
             }
 

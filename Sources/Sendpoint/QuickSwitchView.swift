@@ -239,7 +239,7 @@ struct QuickSwitchView: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(.secondary)
-            TextField("Switch to or create a session", text: $model.query)
+            TextField("Switch to or create a stack", text: $model.query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 17))
                 .focused($focus, equals: .search)
@@ -273,7 +273,7 @@ struct QuickSwitchView: View {
                             .id(QuickSwitchRow.create(name))
                     }
                     if rows.isEmpty {
-                        Text("No sessions match “\(model.query.trimmingCharacters(in: .whitespaces))”.")
+                        Text("No stacks match “\(model.query.trimmingCharacters(in: .whitespaces))”.")
                             .font(.callout)
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, minHeight: rowHeight)
@@ -315,7 +315,7 @@ struct QuickSwitchView: View {
 
                 if isRenaming {
                     VStack(alignment: .leading, spacing: 2) {
-                        TextField("Session name", text: Binding(
+                        TextField("Stack name", text: Binding(
                             get: { model.rename?.text ?? "" },
                             set: { model.updateRenameText($0) }
                         ))
@@ -472,7 +472,7 @@ final class QuickSwitchWindowController: NSObject, NSWindowDelegate {
             backing: .buffered,
             defer: false
         )
-        panel.title = "Switch Session"
+        panel.title = "Switch Stack"
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
         panel.standardWindowButton(.closeButton)?.isHidden = true

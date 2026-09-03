@@ -16,10 +16,10 @@ enum ShortcutSlot: String, CaseIterable, Hashable, Sendable {
         switch self {
         case .voiceCapture: "Voice note"
         case .capture: "Typed note"
-        case .copy: "Copy all as Markdown"
+        case .copy: "Copy stack as Markdown"
         case .stack: "Show stack"
-        case .switchSession: "Switch session"
-        case .clear: "Clear the current session"
+        case .switchSession: "Switch stack"
+        case .clear: "Clear stack"
         }
     }
 }
@@ -75,15 +75,15 @@ enum ProfileMutationError: Error, Equatable, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .unknownProfile:
-            return "The profile no longer exists."
+            return "That template no longer exists."
         case .lastProfile:
-            return "The last profile cannot be deleted."
+            return "The last template cannot be deleted."
         case .emptyName:
-            return "Enter a profile name."
+            return "Enter a template name."
         case .duplicateName:
-            return "A profile with that name already exists."
+            return "A template with that name already exists."
         case .unsavedChanges:
-            return "Save or discard the profile changes first."
+            return "Save or discard the template changes first."
         }
     }
 }

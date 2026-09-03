@@ -57,7 +57,7 @@ struct SetupView: View {
                         .accessibilityHidden(true)
                     Text("Set Up Sendpoint")
                         .font(.largeTitle.weight(.semibold))
-                    Text("Voice note is the fast way to capture a thought. Hold its shortcut to speak and release to save, or tap once to start and tap again to save.")
+                    Text("Select text anywhere, hold \(settings.voiceCaptureCombo.displayString), and say what you think. Sendpoint keeps the passage and your words together in a stack you can copy out as one prompt.")
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
@@ -88,8 +88,14 @@ struct SetupView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.large)
-                    .disabled(!permissionState.isTextCaptureReady)
+                    .disabled(!permissionState.isVoiceReady)
                     .keyboardShortcut(.defaultAction)
+
+                    if !permissionState.isVoiceReady {
+                        Text("Finish the three steps above to start using Sendpoint.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 .padding(.top, 24)
             }
@@ -101,50 +107,62 @@ struct SetupView: View {
     }
 
     private var primaryButtonTitle: String {
-        "Continue"
+        "Start Using Sendpoint"
     }
 
     private var shortcutGuide: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Your shortcuts")
+            Text("How to use it")
                 .font(.headline)
             SetupCard {
-                HStack(spacing: 12) {
-                    SetupIcon("mic.fill")
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Voice note")
-                            .font(.body.weight(.medium))
-                        Text("Hold to speak and release to save, or tap once to start and tap again to save.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: 8)
-                    Keycap(settings.voiceCaptureCombo.displayString)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-
+                howToRow(
+                    icon: "hand.tap.fill",
+                    lead: "Hold",
+                    sentence: "Speak, then release to save.",
+                    keycap: settings.voiceCaptureCombo.displayString
+                )
                 Divider().padding(.leading, 56)
-
-                HStack(spacing: 12) {
-                    SetupIcon("text.viewfinder")
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Typed note")
-                            .font(.body.weight(.medium))
-                        Text("Press to open a note box for selected text.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: 8)
-                    Keycap(settings.captureCombo.displayString)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
+                howToRow(
+                    icon: "hand.point.up.left.fill",
+                    lead: "Tap",
+                    sentence: "Talk as long as you like, tap again to save.",
+                    keycap: settings.voiceCaptureCombo.displayString
+                )
+                Divider().padding(.leading, 56)
+                howToRow(
+                    icon: "escape",
+                    lead: "Esc",
+                    sentence: "Discard the recording.",
+                    keycap: nil
+                )
+                Divider().padding(.leading, 56)
+                howToRow(
+                    icon: "keyboard",
+                    lead: "Type instead",
+                    sentence: "For when you can't talk out loud.",
+                    keycap: settings.captureCombo.displayString
+                )
             }
-            Text("Accessibility is required to read selected text for either kind of note.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
+    }
+
+    private func howToRow(icon: String, lead: String, sentence: String, keycap: String?) -> some View {
+        HStack(spacing: 12) {
+            SetupIcon(icon)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(lead)
+                    .font(.body.weight(.medium))
+                Text(sentence)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            if let keycap {
+                Keycap(keycap)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
     }
 }
 
@@ -237,7 +255,7 @@ struct PermissionCapabilityList: View {
         CapabilityRow(
             icon: "text.viewfinder",
             title: "Accessibility",
-            reason: "Reads selected text in other apps. Required for typed notes and voice notes.",
+            reason: "Lets Sendpoint read the text you select. Needed for every note.",
             status: accessibilityStatus,
             actionTitle: accessibilityActionTitle,
             showsProgress: permissionState.accessibility == .checking,
@@ -249,7 +267,7 @@ struct PermissionCapabilityList: View {
         CapabilityRow(
             icon: "mic",
             title: "Microphone",
-            reason: "Needed for voice notes. Sendpoint records only while a voice note is active.",
+            reason: "Needed for voice notes. Sendpoint only listens while a voice note is open.",
             status: microphoneStatus,
             actionTitle: microphoneActionTitle,
             showsProgress: permissionState.microphone == .checking,
@@ -261,7 +279,7 @@ struct PermissionCapabilityList: View {
         CapabilityRow(
             icon: "waveform",
             title: "Local voice model",
-            reason: "Needed for voice notes. Downloads on first use or when you choose Download Model. A one-time 460 MB download.",
+            reason: "Turns your speech into text on this Mac. One-time 460 MB download.",
             status: voiceModelStatus,
             actionTitle: voiceModelActionTitle,
             showsProgress: voiceModelIsDownloading,

@@ -22,7 +22,7 @@ final class SessionUITests: XCTestCase {
         XCTAssertEqual(facts.sessions.map(\.name), ["Reading", "Writing"])
         XCTAssertEqual(facts.sessions.map(\.annotationCount), [1, 2])
         XCTAssertEqual(facts.sessions.map(\.isCurrent), [false, true])
-        XCTAssertEqual(facts.currentTitle, "Writing — 2 annotations")
+        XCTAssertEqual(facts.currentTitle, "Writing — 2 notes")
         XCTAssertTrue(facts.canDelete)
     }
 
@@ -75,13 +75,13 @@ final class SessionUITests: XCTestCase {
         XCTAssertEqual(
             SessionNameDraft(text: " \n ", excludedSessionID: nil)
                 .validation(sessions: sessions),
-            .invalid("Enter a session name.")
+            .invalid("Enter a stack name.")
         )
         for duplicate in ["résumé", "RESUME", "ＲＥＳＵＭＥ"] {
             XCTAssertEqual(
                 SessionNameDraft(text: duplicate, excludedSessionID: nil)
                     .validation(sessions: sessions),
-                .invalid("A session with that name already exists.")
+                .invalid("A stack with that name already exists.")
             )
         }
     }
@@ -100,7 +100,7 @@ final class SessionUITests: XCTestCase {
         XCTAssertEqual(
             SessionNameDraft(text: "WRITING", excludedSessionID: firstID)
                 .validation(sessions: sessions),
-            .invalid("A session with that name already exists.")
+            .invalid("A stack with that name already exists.")
         )
     }
 

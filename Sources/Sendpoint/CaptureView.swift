@@ -84,14 +84,7 @@ struct CaptureView: View {
                     .allowsHitTesting(false)
             }
         }
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color(nsColor: .textBackgroundColor).opacity(0.55))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.1), lineWidth: 1)
-        )
+        .insetSurface(fill: Color(nsColor: .textBackgroundColor).opacity(0.55))
     }
 
     @ViewBuilder
@@ -120,7 +113,7 @@ struct CaptureView: View {
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack {
-                    Button("Save to Current Session", action: onSaveToCurrentSession)
+                    Button("Save to Current Stack", action: onSaveToCurrentSession)
                         .buttonStyle(.borderedProminent)
                     Button("Discard", role: .destructive, action: onDiscard)
                 }

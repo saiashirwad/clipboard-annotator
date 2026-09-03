@@ -180,7 +180,7 @@ final class CaptureController {
 
         if let recordingStartError {
             Diag.log("voice recording failed: \(recordingStartError.localizedDescription)")
-            showVoiceFailure("Couldn’t start recording.", for: model)
+            showVoiceFailure("Couldn’t start recording. Try again.", for: model)
             return
         }
 
@@ -447,7 +447,7 @@ final class CaptureController {
             self.voiceStartupTask = nil
 
             guard allowed else {
-                self.showVoiceFailure("Microphone access is not allowed.", for: model)
+                self.showVoiceFailure("Microphone access is off. Turn it on in Settings › Voice.", for: model)
                 return
             }
             self.startAuthorizedVoiceRecording(for: model)
@@ -471,7 +471,7 @@ final class CaptureController {
             runVoiceAction(model.recordingStarted(), for: model)
         } catch {
             Diag.log("voice recording failed: \(error.localizedDescription)")
-            showVoiceFailure("Couldn’t start recording.", for: model)
+            showVoiceFailure("Couldn’t start recording. Try again.", for: model)
         }
     }
 
@@ -541,7 +541,7 @@ final class CaptureController {
                 }
                 guard store.sessions.contains(where: { $0.id == identity.sessionID }) else {
                     self.voiceTranscriptionTask = nil
-                    self.showVoiceFailure("The original session is no longer available.", for: model)
+                    self.showVoiceFailure("That stack no longer exists.", for: model)
                     return
                 }
                 guard model.transcriptionSucceeded() == .saveAndDismiss else { return }
@@ -567,8 +567,8 @@ final class CaptureController {
                 self.voiceTranscriptionTask = nil
                 Diag.log("voice transcription failed: \(error.localizedDescription)")
                 let message = VoiceModelDownloadFailure(error) == .offline
-                    ? "No internet connection to download the voice model."
-                    : "Couldn’t transcribe that audio."
+                    ? "No internet connection. The voice model needs a one-time download."
+                    : "Couldn’t transcribe that. Try again."
                 self.showVoiceFailure(message, for: model)
             }
         }

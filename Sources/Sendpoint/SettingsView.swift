@@ -5,18 +5,18 @@ import SwiftUI
 enum SettingsTab: String, CaseIterable, Identifiable {
     case voice
     case shortcuts
+    case profiles
     case capture
     case permissions
-    case profiles
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .voice: "Voice"
-        case .profiles: "Profiles"
         case .shortcuts: "Shortcuts"
-        case .capture: "Capture"
+        case .profiles: "Templates"
+        case .capture: "General"
         case .permissions: "Permissions"
         }
     }
@@ -24,9 +24,9 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .voice: "mic.fill"
-        case .profiles: "text.quote"
         case .shortcuts: "keyboard"
-        case .capture: "cursorarrow.click.2"
+        case .profiles: "text.quote"
+        case .capture: "gearshape"
         case .permissions: "checkmark.shield"
         }
     }
@@ -34,8 +34,8 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     var tint: Color {
         switch self {
         case .voice: Color(red: 0.95, green: 0.32, blue: 0.28)
-        case .profiles: Color(red: 0.55, green: 0.36, blue: 0.96)
         case .shortcuts: Color(red: 0.36, green: 0.36, blue: 0.40)
+        case .profiles: Color(red: 0.55, green: 0.36, blue: 0.96)
         case .capture: Color(red: 0.20, green: 0.68, blue: 0.40)
         case .permissions: Color(red: 0.95, green: 0.55, blue: 0.16)
         }
@@ -98,8 +98,8 @@ struct SettingsView: View {
                         }
                         switch tab {
                         case .voice: voiceTab
-                        case .profiles: profilesTab
                         case .shortcuts: shortcutsTab
+                        case .profiles: profilesTab
                         case .capture: captureTab
                         case .permissions: permissionsTab
                         }
@@ -128,7 +128,7 @@ struct SettingsView: View {
 
     private var profileChips: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SettingsCaption("Active profile")
+            SettingsCaption("Active template")
             HStack(spacing: 6) {
                 ForEach(profileEditor.profiles) { profile in
                     ProfileChip(
@@ -150,8 +150,8 @@ struct SettingsView: View {
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
-                .help("New profile from this draft…")
-                .accessibilityLabel("New profile")
+                .help("New template from this draft…")
+                .accessibilityLabel("New template")
                 .popover(
                     isPresented: Binding(
                         get: { newProfile != nil },
@@ -169,7 +169,7 @@ struct SettingsView: View {
                     )
                 }
             }
-            Text("The selected profile is active and shapes what Copy produces.")
+            Text("The active template shapes the Markdown you copy out of a stack.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -190,12 +190,12 @@ struct SettingsView: View {
                 .disabled(!profileEditor.canDelete || profileEditor.isDirty)
                 .help(profileEditor.isDirty
                     ? "Save or revert changes before deleting."
-                    : "Delete this profile…")
-                .accessibilityLabel("Delete profile")
+                    : "Delete this template…")
+                .accessibilityLabel("Delete template")
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                SettingsCaption("Preamble")
+                SettingsCaption("Instructions for the AI")
                 TextEditor(text: $profileEditor.draft.preamble)
                     .font(.body)
                     .lineSpacing(2)
@@ -211,8 +211,8 @@ struct SettingsView: View {
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
                             .strokeBorder(Color.primary.opacity(0.1), lineWidth: 1)
                     )
-                    .accessibilityLabel("Profile preamble")
-                Text("Placed above the notes. Tell the model how to read them.")
+                    .accessibilityLabel("Template instructions")
+                Text("Goes above your notes when you copy. Tell the AI what to do with them.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -234,7 +234,7 @@ struct SettingsView: View {
 
             SettingsCard {
                 SettingsToggleRow(
-                    "Clear the session after copying or pasting",
+                    "Clear the stack after copying or pasting",
                     subtitle: "Start fresh once the notes have left the app.",
                     isOn: $profileEditor.draft.clearSessionAfterExport
                 )
@@ -299,65 +299,100 @@ struct SettingsView: View {
                     shortcutRow(
                         icon: "mic.fill",
                         title: "Voice note",
-                        detail: "Hold the shortcut to speak and release to save, or tap once to start and tap again to save.",
+                        detail: "Select text, then use this shortcut to say what you think.",
                         slot: .voiceCapture
                     )
                 }
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                SettingsCaption("How it works")
+                SettingsCard {
+                    howItWorksRow(
+                        icon: "hand.tap.fill",
+                        lead: "Hold",
+                        sentence: "Hold \(voiceComboDisplay), speak, release to save."
+                    )
+                    Divider().padding(.leading, 56)
+                    howItWorksRow(
+                        icon: "hand.point.up.left.fill",
+                        lead: "Tap",
+                        sentence: "Tap \(voiceComboDisplay) once to start, tap it again to save. Good for longer thoughts."
+                    )
+                    Divider().padding(.leading, 56)
+                    howItWorksRow(
+                        icon: "escape",
+                        lead: "Esc",
+                        sentence: "Press Escape while the panel is open to discard the recording."
+                    )
+                }
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                SettingsCaption("Voice needs")
                 PermissionCapabilityList(
                     permissionState: permissionState,
                     onShowAccessibilityHelper: onShowAccessibilityHelper,
                     scope: .voice
                 )
-                Text("Press Escape in the voice panel to discard the recording.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                shortcutFeedbackView
             }
+            shortcutFeedbackView
         }
+    }
+
+    private var voiceComboDisplay: String {
+        settings.voiceCaptureCombo.displayString
     }
 
     private var shortcutsTab: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Voice note has its own section. These shortcuts cover typed notes and the rest of Sendpoint.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            SettingsCard {
-                shortcutRow(
-                    icon: "text.viewfinder",
-                    title: "Typed note",
-                    detail: "Opens a note box for the text you have selected.",
-                    slot: .capture
-                )
-                Divider().padding(.leading, 56)
-                shortcutRow(
-                    icon: "doc.on.clipboard",
-                    title: "Copy all as Markdown",
-                    detail: "Everything in the session, shaped by the active profile.",
-                    slot: .copy
-                )
-                Divider().padding(.leading, 56)
-                shortcutRow(
-                    icon: "square.stack.3d.up",
-                    title: "Show stack",
-                    detail: "Opens the window with all your annotations.",
-                    slot: .stack
-                )
-                Divider().padding(.leading, 56)
-                shortcutRow(
-                    icon: "arrow.left.arrow.right",
-                    title: "Switch session",
-                    detail: "Jump between sessions, or create one by typing its name.",
-                    slot: .switchSession
-                )
-                Divider().padding(.leading, 56)
-                shortcutRow(
-                    icon: "trash",
-                    title: "Clear the current session",
-                    detail: "Undoable from the menu bar, or with ⌘Z in the stack window.",
-                    slot: .clear
-                )
+            VStack(alignment: .leading, spacing: 8) {
+                SettingsCaption("Making notes")
+                SettingsCard {
+                    shortcutRow(
+                        icon: "mic.fill",
+                        title: "Voice note",
+                        detail: "Hold to speak, or tap to start and tap again to save.",
+                        slot: .voiceCapture
+                    )
+                    Divider().padding(.leading, 56)
+                    shortcutRow(
+                        icon: "text.viewfinder",
+                        title: "Typed note",
+                        detail: "Opens a note box for the text you have selected. For when you can't talk.",
+                        slot: .capture
+                    )
+                }
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                SettingsCaption("Your stack")
+                SettingsCard {
+                    shortcutRow(
+                        icon: "doc.on.clipboard",
+                        title: "Copy stack as Markdown",
+                        detail: "Everything in the stack, shaped by the active template.",
+                        slot: .copy
+                    )
+                    Divider().padding(.leading, 56)
+                    shortcutRow(
+                        icon: "square.stack.3d.up",
+                        title: "Show stack",
+                        detail: "Opens the window with all your notes.",
+                        slot: .stack
+                    )
+                    Divider().padding(.leading, 56)
+                    shortcutRow(
+                        icon: "arrow.left.arrow.right",
+                        title: "Switch stack",
+                        detail: "Jump between stacks, or make a new one by typing its name.",
+                        slot: .switchSession
+                    )
+                    Divider().padding(.leading, 56)
+                    shortcutRow(
+                        icon: "trash",
+                        title: "Clear stack",
+                        detail: "Undo from the menu bar, or with ⌘Z in the stack window.",
+                        slot: .clear
+                    )
+                }
             }
             shortcutFeedbackView
             Text("Click a shortcut, then press the keys you want. Press Escape to keep the old one. Some system shortcuts may not be available.")
@@ -384,6 +419,20 @@ struct SettingsView: View {
             Spacer(minLength: 12)
             KeyRecorder(combo: shortcutBinding(for: slot))
                 .fixedSize()
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
+
+    private func howItWorksRow(icon: String, lead: String, sentence: String) -> some View {
+        HStack(spacing: 14) {
+            SettingsIcon(icon)
+            (
+                Text(lead).font(.body.weight(.semibold))
+                    + Text(" " + sentence).font(.callout).foregroundStyle(.secondary)
+            )
+            .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -462,13 +511,13 @@ struct SettingsView: View {
             SettingsCard {
                 SettingsRow(
                     "Setup assistant",
-                    subtitle: "Walk through the permissions and the voice model again."
+                    subtitle: "Walk through permissions and the voice model again."
                 ) {
                     Button("Run Setup Again…", action: onRunSetup)
                 }
             }
             Label {
-                Text("Accessibility is required for capture, including voice notes. The local voice model downloads on first voice note or from this screen; audio and transcription never leave this Mac.")
+                Text("Accessibility lets Sendpoint read the text you select, for both kinds of note. Voice also needs the microphone and a one-time voice-model download; audio never leaves this Mac.")
             } icon: {
                 Image(systemName: "lock.shield")
             }
@@ -515,10 +564,10 @@ private struct NewProfilePopover: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("New profile from the current draft")
+            Text("New template from the current draft")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            TextField("Profile name", text: $name)
+            TextField("Template name", text: $name)
                 .textFieldStyle(.roundedBorder)
                 .font(.system(size: 13))
                 .focused($focused)
@@ -645,11 +694,11 @@ private struct ProfileNameField<Accessory: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 12) {
-                TextField("Profile name", text: $text)
+                TextField("Template name", text: $text)
                     .textFieldStyle(.plain)
                     .font(.system(size: 22, weight: .semibold))
                     .focused($focused)
-                    .accessibilityLabel("Profile name")
+                    .accessibilityLabel("Template name")
                 accessory()
             }
             Rectangle()
@@ -798,7 +847,7 @@ enum ProfileDialogs {
     static func showError(_ error: Error) {
         let alert = NSAlert()
         alert.alertStyle = .informational
-        alert.messageText = "Profile Change Failed"
+        alert.messageText = "Couldn't Change Template"
         alert.informativeText = error.localizedDescription
         alert.addButton(withTitle: "OK")
         alert.runModal()
@@ -810,7 +859,7 @@ enum ProfileDialogs {
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "Save changes to “\(editor.draft.name)”?"
-        alert.informativeText = "Choose what to do with this profile draft."
+        alert.informativeText = "Choose what to do with this template."
         alert.addButton(withTitle: "Save")
         alert.addButton(withTitle: "Save as New…")
         alert.addButton(withTitle: "Discard")
@@ -850,13 +899,13 @@ enum ProfileDialogs {
         var proposedName = "\(editor.draft.name) Copy"
         while true {
             let alert = NSAlert()
-            alert.messageText = "New Profile"
-            alert.informativeText = "Enter a unique profile name."
+            alert.messageText = "New Template"
+            alert.informativeText = "Enter a unique template name."
             alert.addButton(withTitle: "Save")
             alert.addButton(withTitle: "Cancel")
 
             let field = NSTextField(string: proposedName)
-            field.placeholderString = "Profile name"
+            field.placeholderString = "Template name"
             field.frame = NSRect(x: 0, y: 0, width: 300, height: 24)
             alert.accessoryView = field
             alert.window.initialFirstResponder = field

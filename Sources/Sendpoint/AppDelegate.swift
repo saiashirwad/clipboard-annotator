@@ -133,11 +133,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var unavailableMenuTitle: String {
         switch storeState {
         case .loading:
-            return "Loading Annotations…"
+            return "Loading notes…"
         case .available:
-            return "Nothing Captured Yet"
+            return "Nothing captured yet"
         case let .unavailable(message):
-            return "Annotations Unavailable: \(message)"
+            return "Notes unavailable: \(message)"
         }
     }
 
@@ -248,7 +248,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func applyCountTitle() {
         let count = store?.currentEntries.count ?? 0
         statusItem.button?.title = count > 0 ? " \(count)" : ""
-        let sessionName = store?.currentSession.name ?? "No session"
+        let sessionName = store?.currentSession.name ?? "No stack"
         statusItem.button?.toolTip = "\(sessionName) · \(settings.activeProfile.name)"
     }
 
@@ -277,7 +277,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(voice)
 
         let capture = NSMenuItem(
-            title: "Capture Selection",
+            title: "Typed Note",
             action: isStoreAvailable ? #selector(captureSelection) : nil,
             keyEquivalent: ""
         )
@@ -305,10 +305,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let summary = NSMenuItem(title: facts.currentTitle, action: nil, keyEquivalent: "")
             menu.addItem(summary)
 
-            let sessionMenu = NSMenu(title: "Session")
+            let sessionMenu = NSMenu(title: "Stack")
             for session in facts.sessions {
                 let item = NSMenuItem(
-                    title: "\(session.name) (\(session.annotationCount))",
+                    title: "\(session.name) — \(session.annotationCount) note\(session.annotationCount == 1 ? "" : "s")",
                     action: #selector(switchToSession(_:)),
                     keyEquivalent: ""
                 )
@@ -320,7 +320,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             sessionMenu.addItem(.separator())
 
             let quickSwitch = NSMenuItem(
-                title: "Switch Session…",
+                title: "Switch Stack…",
                 action: #selector(showQuickSwitcher),
                 keyEquivalent: ""
             )
@@ -330,7 +330,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             sessionMenu.addItem(.separator())
 
             let newSession = NSMenuItem(
-                title: "New Session…",
+                title: "New Stack…",
                 action: #selector(newSession(_:)),
                 keyEquivalent: ""
             )
@@ -338,7 +338,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             sessionMenu.addItem(newSession)
 
             let rename = NSMenuItem(
-                title: "Rename Current Session…",
+                title: "Rename Current Stack…",
                 action: #selector(renameSession(_:)),
                 keyEquivalent: ""
             )
@@ -347,7 +347,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             sessionMenu.addItem(rename)
 
             let delete = NSMenuItem(
-                title: "Delete Current Session…",
+                title: "Delete Current Stack…",
                 action: facts.canDelete ? #selector(deleteSession(_:)) : nil,
                 keyEquivalent: ""
             )
@@ -355,12 +355,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             delete.representedObject = current.id as NSUUID
             sessionMenu.addItem(delete)
 
-            let sessionRoot = NSMenuItem(title: "Session", action: nil, keyEquivalent: "")
+            let sessionRoot = NSMenuItem(title: "Stack", action: nil, keyEquivalent: "")
             sessionRoot.submenu = sessionMenu
             menu.addItem(sessionRoot)
         }
 
-        let profileMenu = NSMenu(title: "Profile")
+        let profileMenu = NSMenu(title: "Template")
         for profile in settings.profiles {
             let item = NSMenuItem(
                 title: profile.name,
@@ -372,7 +372,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             item.state = profile.id == settings.activeProfileID ? .on : .off
             profileMenu.addItem(item)
         }
-        let profileRoot = NSMenuItem(title: "Profile", action: nil, keyEquivalent: "")
+        let profileRoot = NSMenuItem(title: "Template", action: nil, keyEquivalent: "")
         profileRoot.submenu = profileMenu
         menu.addItem(profileRoot)
 
@@ -382,7 +382,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let verb = settings.pasteDirectly ? "Paste" : "Copy"
         let copy = NSMenuItem(
             title: count > 0
-                ? "\(verb) \(count) Annotation\(count == 1 ? "" : "s") as Markdown"
+                ? "\(verb) \(count) Note\(count == 1 ? "" : "s") as Markdown"
                 : unavailableMenuTitle,
             action: count > 0 ? #selector(copyMarkdown) : nil,
             keyEquivalent: ""
@@ -392,7 +392,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(copy)
 
         let clear = NSMenuItem(
-            title: facts?.current.map { "Clear \($0.name)" } ?? "Clear Current Session",
+            title: facts?.current.map { "Clear \($0.name)" } ?? "Clear Current Stack",
             action: count > 0 ? #selector(clearSession(_:)) : nil,
             keyEquivalent: ""
         )
@@ -422,7 +422,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(errorItem)
             if store?.hasPendingMutations == true {
                 let retry = NSMenuItem(
-                    title: "Retry Pending Session Changes",
+                    title: "Retry Pending Stack Changes",
                     action: #selector(retryPendingMutations),
                     keyEquivalent: ""
                 )
@@ -756,7 +756,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "Annotation Stack"
+        window.title = "Stack"
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.styleMask.insert(.fullSizeContentView)
@@ -831,7 +831,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 onComplete: { [weak self] in
                     guard let self else { return }
                     self.setupWindowController?.close()
-                    self.flashStatus("\(self.settings.voiceCaptureCombo.displayString): hold or tap twice · Esc cancels")
+                    self.flashStatus("\(self.settings.voiceCaptureCombo.displayString): hold to talk, or tap to start and tap again to save · Esc discards")
                 }
             )
         }
