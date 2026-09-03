@@ -52,6 +52,7 @@ struct SettingsView: View {
 
     @State private var tab: SettingsTab = .voice
     @State private var newProfile: NewProfileDraft?
+    @State private var shortcutFeedback: String?
 
     private struct NewProfileDraft: Equatable {
         var name: String
@@ -91,7 +92,10 @@ struct SettingsView: View {
                     .frame(height: Self.titleBarHeight)
                 Divider()
                 ScrollView {
-                    Group {
+                    VStack(alignment: .leading, spacing: 14) {
+                        if !settings.shortcutRegistrationIssues.isEmpty {
+                            shortcutRegistrationIssues
+                        }
                         switch tab {
                         case .voice: voiceTab
                         case .profiles: profilesTab
@@ -271,6 +275,22 @@ struct SettingsView: View {
 
     // MARK: - Shortcuts
 
+    private var shortcutRegistrationIssues: some View {
+        SettingsCard {
+            VStack(alignment: .leading, spacing: 6) {
+                Label("Shortcut unavailable", systemImage: "exclamationmark.triangle.fill")
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(.orange)
+                ForEach(settings.shortcutRegistrationIssues) { issue in
+                    Text("• \(issue.id.title): \(issue.message)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
     private var voiceTab: some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 8) {
@@ -280,13 +300,14 @@ struct SettingsView: View {
                         icon: "mic.fill",
                         title: "Voice note",
                         detail: "Hold the shortcut to speak and release to save, or tap once to start and tap again to save.",
-                        combo: $settings.voiceCaptureCombo
+                        slot: .voiceCapture
                     )
                 }
                 Text("Press Escape in the voice panel to discard the recording. Microphone and local model access are managed in Permissions.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                shortcutFeedbackView
             }
         }
     }
@@ -302,37 +323,38 @@ struct SettingsView: View {
                     icon: "text.viewfinder",
                     title: "Typed note",
                     detail: "Opens a note box for the text you have selected.",
-                    combo: $settings.captureCombo
+                    slot: .capture
                 )
                 Divider().padding(.leading, 56)
                 shortcutRow(
                     icon: "doc.on.clipboard",
                     title: "Copy all as Markdown",
                     detail: "Everything in the session, shaped by the active profile.",
-                    combo: $settings.copyCombo
+                    slot: .copy
                 )
                 Divider().padding(.leading, 56)
                 shortcutRow(
                     icon: "square.stack.3d.up",
                     title: "Show stack",
                     detail: "Opens the window with all your annotations.",
-                    combo: $settings.stackCombo
+                    slot: .stack
                 )
                 Divider().padding(.leading, 56)
                 shortcutRow(
                     icon: "arrow.left.arrow.right",
                     title: "Switch session",
                     detail: "Jump between sessions, or create one by typing its name.",
-                    combo: $settings.switchSessionCombo
+                    slot: .switchSession
                 )
                 Divider().padding(.leading, 56)
                 shortcutRow(
                     icon: "trash",
                     title: "Clear the current session",
                     detail: "Undoable from the menu bar, or with ⌘Z in the stack window.",
-                    combo: $settings.clearCombo
+                    slot: .clear
                 )
             }
+            shortcutFeedbackView
             Text("Click a shortcut, then press the keys you want. Press Escape to keep the old one. Some system shortcuts may not be available.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -343,7 +365,7 @@ struct SettingsView: View {
         icon: String,
         title: String,
         detail: String,
-        combo: Binding<KeyCombo>
+        slot: ShortcutSlot
     ) -> some View {
         HStack(spacing: 14) {
             SettingsIcon(icon)
@@ -355,11 +377,35 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 12)
-            KeyRecorder(combo: combo)
+            KeyRecorder(combo: shortcutBinding(for: slot))
                 .fixedSize()
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
+    }
+
+    @ViewBuilder
+    private var shortcutFeedbackView: some View {
+        if let shortcutFeedback {
+            Label(shortcutFeedback, systemImage: "exclamationmark.circle")
+                .font(.caption)
+                .foregroundStyle(.red)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func shortcutBinding(for slot: ShortcutSlot) -> Binding<KeyCombo> {
+        Binding(
+            get: { settings.combo(for: slot) },
+            set: { proposed in
+                do {
+                    try settings.setShortcut(proposed, for: slot)
+                    shortcutFeedback = nil
+                } catch {
+                    shortcutFeedback = error.localizedDescription
+                }
+            }
+        )
     }
 
     // MARK: - Capture

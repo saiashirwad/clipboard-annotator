@@ -453,31 +453,65 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Hot keys
 
     private func registerHotKeys() {
-        HotKeyCenter.shared.register(name: "capture", combo: settings.captureCombo) { [weak self] in
-            self?.captureSelection()
-        }
-        HotKeyCenter.shared.registerHold(
-            name: "voiceCapture",
-            combo: settings.voiceCaptureCombo,
-            pressed: { [weak self] in
-                self?.handleVoiceTrigger(.hotKeyPressed(at: CACurrentMediaTime()))
-            },
-            released: { [weak self] in
-                self?.handleVoiceTrigger(.hotKeyReleased(at: CACurrentMediaTime()))
+        var issues: [ShortcutRegistrationIssue] = []
+
+        func register(
+            _ slot: ShortcutSlot,
+            combo: KeyCombo,
+            operation: () -> HotKeyRegistrationResult
+        ) {
+            if let conflict = settings.shortcutConflict(for: combo, excluding: slot) {
+                issues.append(.conflict(slot: slot, combo: combo, reason: conflict))
+                return
             }
-        )
-        HotKeyCenter.shared.register(name: "copy", combo: settings.copyCombo) { [weak self] in
-            self?.copyMarkdown()
+            switch operation() {
+            case .registered:
+                break
+            case .invalid:
+                issues.append(.invalid(slot: slot, combo: combo))
+            case let .failed(status):
+                issues.append(.unavailable(slot: slot, combo: combo, status: status))
+            }
         }
-        HotKeyCenter.shared.register(name: "stack", combo: settings.stackCombo) { [weak self] in
-            self?.showStack()
+
+        register(.capture, combo: settings.captureCombo) {
+            HotKeyCenter.shared.register(name: "capture", combo: settings.captureCombo) { [weak self] in
+                self?.captureSelection()
+            }
         }
-        HotKeyCenter.shared.register(name: "switchSession", combo: settings.switchSessionCombo) { [weak self] in
-            self?.showQuickSwitcher()
+        register(.voiceCapture, combo: settings.voiceCaptureCombo) {
+            HotKeyCenter.shared.registerHold(
+                name: "voiceCapture",
+                combo: settings.voiceCaptureCombo,
+                pressed: { [weak self] in
+                    self?.handleVoiceTrigger(.hotKeyPressed(at: CACurrentMediaTime()))
+                },
+                released: { [weak self] in
+                    self?.handleVoiceTrigger(.hotKeyReleased(at: CACurrentMediaTime()))
+                }
+            )
         }
-        HotKeyCenter.shared.register(name: "clear", combo: settings.clearCombo) { [weak self] in
-            self?.clearStack()
+        register(.copy, combo: settings.copyCombo) {
+            HotKeyCenter.shared.register(name: "copy", combo: settings.copyCombo) { [weak self] in
+                self?.copyMarkdown()
+            }
         }
+        register(.stack, combo: settings.stackCombo) {
+            HotKeyCenter.shared.register(name: "stack", combo: settings.stackCombo) { [weak self] in
+                self?.showStack()
+            }
+        }
+        register(.switchSession, combo: settings.switchSessionCombo) {
+            HotKeyCenter.shared.register(name: "switchSession", combo: settings.switchSessionCombo) { [weak self] in
+                self?.showQuickSwitcher()
+            }
+        }
+        register(.clear, combo: settings.clearCombo) {
+            HotKeyCenter.shared.register(name: "clear", combo: settings.clearCombo) { [weak self] in
+                self?.clearStack()
+            }
+        }
+        settings.updateShortcutRegistrationIssues(issues)
         rebuildMenu()
     }
 

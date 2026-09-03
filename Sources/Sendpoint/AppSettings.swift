@@ -4,6 +4,67 @@ import SendpointDomain
 import Observation
 import ServiceManagement
 
+enum ShortcutSlot: String, CaseIterable, Hashable, Sendable {
+    case voiceCapture
+    case capture
+    case copy
+    case stack
+    case switchSession
+    case clear
+
+    var title: String {
+        switch self {
+        case .voiceCapture: "Voice note"
+        case .capture: "Typed note"
+        case .copy: "Copy all as Markdown"
+        case .stack: "Show stack"
+        case .switchSession: "Switch session"
+        case .clear: "Clear the current session"
+        }
+    }
+}
+
+enum ShortcutConflict: Error, Equatable, LocalizedError {
+    case invalid
+    case duplicate(ShortcutSlot)
+    case reserved(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalid:
+            "Choose a shortcut with Control, Option, or Command."
+        case let .duplicate(slot):
+            "That shortcut is already used by \(slot.title)."
+        case let .reserved(name):
+            "That shortcut is reserved for \(name)."
+        }
+    }
+}
+
+enum ShortcutRegistrationIssue: Equatable, Identifiable {
+    case conflict(slot: ShortcutSlot, combo: KeyCombo, reason: ShortcutConflict)
+    case invalid(slot: ShortcutSlot, combo: KeyCombo)
+    case unavailable(slot: ShortcutSlot, combo: KeyCombo, status: Int32)
+
+    var id: ShortcutSlot {
+        switch self {
+        case let .conflict(slot, _, _), let .invalid(slot, _), let .unavailable(slot, _, _):
+            slot
+        }
+    }
+
+    var message: String {
+        switch self {
+        case let .conflict(_, _, reason):
+            reason.localizedDescription
+        case let .invalid(slot, _):
+            "\(slot.title) has an invalid shortcut. Choose another one in Settings."
+        case let .unavailable(slot, combo, status):
+            "\(slot.title) shortcut \(combo.displayString) is unavailable (system error \(status)). Choose another shortcut in Settings."
+        }
+    }
+}
+
 enum ProfileMutationError: Error, Equatable, LocalizedError {
     case unknownProfile
     case lastProfile
@@ -48,12 +109,14 @@ final class AppSettings {
 
     private let defaults: UserDefaults
 
-    var captureCombo: KeyCombo { didSet { persist(captureCombo, key: Key.captureCombo); onHotKeysChanged?() } }
-    var voiceCaptureCombo: KeyCombo { didSet { persist(voiceCaptureCombo, key: Key.voiceCaptureCombo); onHotKeysChanged?() } }
-    var copyCombo: KeyCombo { didSet { persist(copyCombo, key: Key.copyCombo); onHotKeysChanged?() } }
-    var stackCombo: KeyCombo { didSet { persist(stackCombo, key: Key.stackCombo); onHotKeysChanged?() } }
-    var switchSessionCombo: KeyCombo { didSet { persist(switchSessionCombo, key: Key.switchSessionCombo); onHotKeysChanged?() } }
-    var clearCombo: KeyCombo { didSet { persist(clearCombo, key: Key.clearCombo); onHotKeysChanged?() } }
+    private(set) var captureCombo: KeyCombo { didSet { persist(captureCombo, key: Key.captureCombo); onHotKeysChanged?() } }
+    private(set) var voiceCaptureCombo: KeyCombo { didSet { persist(voiceCaptureCombo, key: Key.voiceCaptureCombo); onHotKeysChanged?() } }
+    private(set) var copyCombo: KeyCombo { didSet { persist(copyCombo, key: Key.copyCombo); onHotKeysChanged?() } }
+    private(set) var stackCombo: KeyCombo { didSet { persist(stackCombo, key: Key.stackCombo); onHotKeysChanged?() } }
+    private(set) var switchSessionCombo: KeyCombo { didSet { persist(switchSessionCombo, key: Key.switchSessionCombo); onHotKeysChanged?() } }
+    private(set) var clearCombo: KeyCombo { didSet { persist(clearCombo, key: Key.clearCombo); onHotKeysChanged?() } }
+
+    private(set) var shortcutRegistrationIssues: [ShortcutRegistrationIssue] = []
 
     private(set) var profiles: [Profile]
     private(set) var activeProfileID: UUID
@@ -115,6 +178,14 @@ final class AppSettings {
         restoreFocusAfterSave = defaults.object(forKey: Key.restoreFocusAfterSave) as? Bool ?? true
         hasCompletedSetup = defaults.object(forKey: Key.hasCompletedSetup) as? Bool ?? false
         launchAtLogin = SMAppService.mainApp.status == .enabled
+        shortcutRegistrationIssues = ShortcutSlot.allCases.compactMap { slot in
+            let combo = combo(for: slot)
+            if let conflict = shortcutConflict(for: combo, excluding: slot) {
+                return .conflict(slot: slot, combo: combo, reason: conflict)
+            }
+            guard combo.isValid else { return .invalid(slot: slot, combo: combo) }
+            return nil
+        }
 
         for obsoleteKey in ["includeSource", "includeHeading", "clearAfterCopy"] {
             defaults.removeObject(forKey: obsoleteKey)
@@ -127,6 +198,54 @@ final class AppSettings {
         guard !hasCompletedSetup else { return }
         hasCompletedSetup = true
         defaults.set(true, forKey: Key.hasCompletedSetup)
+    }
+
+    func combo(for slot: ShortcutSlot) -> KeyCombo {
+        switch slot {
+        case .voiceCapture: voiceCaptureCombo
+        case .capture: captureCombo
+        case .copy: copyCombo
+        case .stack: stackCombo
+        case .switchSession: switchSessionCombo
+        case .clear: clearCombo
+        }
+    }
+
+    func shortcutConflict(for proposed: KeyCombo, excluding slot: ShortcutSlot) -> ShortcutConflict? {
+        guard proposed.isValid else { return .invalid }
+
+        let fixed: [(KeyCombo, String)] = [
+            (KeyCombo(keyCode: UInt16(kVK_ANSI_W), modifiers: [.command]), "Close Window (⌘W)"),
+            (KeyCombo(keyCode: UInt16(kVK_ANSI_Z), modifiers: [.command]), "Undo (⌘Z)"),
+        ]
+        if let (_, name) = fixed.first(where: { $0.0 == proposed }) {
+            return .reserved(name)
+        }
+        if let duplicate = ShortcutSlot.allCases.first(where: {
+            $0 != slot && combo(for: $0) == proposed
+        }) {
+            return .duplicate(duplicate)
+        }
+        return nil
+    }
+
+    func setShortcut(_ proposed: KeyCombo, for slot: ShortcutSlot) throws {
+        if let conflict = shortcutConflict(for: proposed, excluding: slot) {
+            throw conflict
+        }
+        switch slot {
+        case .voiceCapture: voiceCaptureCombo = proposed
+        case .capture: captureCombo = proposed
+        case .copy: copyCombo = proposed
+        case .stack: stackCombo = proposed
+        case .switchSession: switchSessionCombo = proposed
+        case .clear: clearCombo = proposed
+        }
+    }
+
+    func updateShortcutRegistrationIssues(_ issues: [ShortcutRegistrationIssue]) {
+        guard shortcutRegistrationIssues != issues else { return }
+        shortcutRegistrationIssues = issues
     }
 
     func selectProfile(id: UUID) throws {
