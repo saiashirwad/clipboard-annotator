@@ -53,6 +53,11 @@ final class PermissionStateTests: XCTestCase {
             continuation?.resume()
             continuation = nil
         }
+
+        func fail(_ error: Error) {
+            continuation?.resume(throwing: error)
+            continuation = nil
+        }
     }
 
     private final class BoolBox: @unchecked Sendable {
@@ -324,6 +329,27 @@ final class PermissionStateTests: XCTestCase {
 
         state.refreshVoiceModel()
         XCTAssertEqual(state.localVoiceModel, .notDownloaded)
+        state.teardown()
+    }
+
+    func testReadyNotificationWinsOverOwnedDownloadFailure() async {
+        let files = BoolBox(false)
+        let gate = ModelDownloadGate()
+        let state = PermissionState(services: services(
+            modelFilesExist: { files.value },
+            downloadModel: { progress in
+                try await gate.run(progress: progress)
+            }
+        ))
+        state.downloadModel()
+        await waitUntil { await gate.count == 1 }
+
+        files.value = true
+        NotificationCenter.default.post(name: .voiceModelDidBecomeReady, object: nil)
+        await gate.fail(TestError.failed)
+        await state.waitForIdle()
+
+        XCTAssertEqual(state.localVoiceModel, .ready)
         state.teardown()
     }
 

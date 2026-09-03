@@ -469,6 +469,10 @@ final class PermissionState {
         modelDownloadTask = nil
         modelProgressTask?.cancel()
         modelProgressTask = nil
+        // File readiness is authoritative. A shared preparation can publish it
+        // before this caller returns, so a later caller-specific error must not
+        // replace the ready state.
+        if case .ready = localVoiceModel, case .failed = result { return }
         localVoiceModel = result
     }
 }
