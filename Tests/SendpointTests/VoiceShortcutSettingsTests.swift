@@ -25,6 +25,15 @@ final class VoiceShortcutSettingsTests: XCTestCase {
         XCTAssertEqual(settings.voiceCaptureCombo, deliberate)
     }
 
+    func testVoiceRegistrationResetOnlyFollowsAnActualComboChange() {
+        XCTAssertFalse(AppDelegate.voiceShortcutChanged(from: nil, to: .optionSpace))
+        XCTAssertFalse(AppDelegate.voiceShortcutChanged(from: .optionSpace, to: .optionSpace))
+        XCTAssertTrue(AppDelegate.voiceShortcutChanged(
+            from: .optionSpace,
+            to: KeyCombo(keyCode: UInt16(kVK_ANSI_E), modifiers: [.control, .command])
+        ))
+    }
+
     private func makeDefaults() -> (UserDefaults, String) {
         let suite = "SendpointVoiceShortcutTests.\(UUID().uuidString)"
         return (UserDefaults(suiteName: suite)!, suite)

@@ -96,7 +96,7 @@ struct VoiceCaptureView: View {
         switch model.phase {
         case .selecting, .starting, .recording:
             model.isLatched
-                ? "Tap (shortcut.displayString) again to save · Esc to discard"
+                ? "Tap \(shortcut.displayString) again to save · Esc to discard"
                 : "Release to save · Esc to discard"
         case .transcribing(.preparingModel): "First time only"
         case .transcribing(.transcribing): "Saving to your stack"

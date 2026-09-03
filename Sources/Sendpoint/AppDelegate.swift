@@ -31,6 +31,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let captureController: CaptureController
     private let permissionState: PermissionState
     private var voiceTrigger = VoiceTriggerMachine()
+    private var lastRegisteredVoiceCombo: KeyCombo?
+
+    static func voiceShortcutChanged(from previous: KeyCombo?, to current: KeyCombo) -> Bool {
+        guard let previous else { return false }
+        return previous != current
+    }
 
     override init() {
         let settings = AppSettings.shared
@@ -453,10 +459,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Hot keys
 
     private func registerHotKeys() {
-        // Carbon can drop the old key-up while a shortcut is being replaced.
-        // Reset the trigger before installing the new registration so an old
-        // release cannot strand the machine in comboHeld.
-        handleVoiceTrigger(.shortcutConfigurationChanged)
+        let voiceComboChanged = Self.voiceShortcutChanged(
+            from: lastRegisteredVoiceCombo,
+            to: settings.voiceCaptureCombo
+        )
+        if voiceComboChanged {
+            // Carbon can drop the old key-up while a shortcut is being
+            // replaced. Reset the trigger before installing the new
+            // registration so an old release cannot strand it in comboHeld.
+            handleVoiceTrigger(.shortcutConfigurationChanged)
+        }
+        lastRegisteredVoiceCombo = settings.voiceCaptureCombo
         var issues: [ShortcutRegistrationIssue] = []
 
         func register(
