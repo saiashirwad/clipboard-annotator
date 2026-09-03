@@ -195,6 +195,7 @@ final class CaptureController {
 
     func cancelVoiceCapture(source: VoiceTriggerSource) {
         guard let model = voiceModel, model.trigger == source else { return }
+        if case .transcribing = model.phase { return }
         teardownVoice(returnFocus: true)
     }
 
@@ -451,6 +452,9 @@ final class CaptureController {
               voiceTranscriptionTask == nil
         else { return }
 
+        // Escape is a recording cancel key. Once transcription owns the
+        // capture, let the front app receive Escape normally.
+        HotKeyCenter.shared.unregister(name: "voiceEscape")
         voiceStartupTask?.cancel()
         voiceStartupTask = nil
         let identity = model.identity
