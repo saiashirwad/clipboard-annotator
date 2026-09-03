@@ -154,6 +154,9 @@
     .menubar svg { display: block; fill: #fff; filter: drop-shadow(0 0.5px 1px rgba(0,0,0,0.35)); }
     .menubar .apple { width: 1.05em; height: 1.05em; }
     .menubar .glyph { height: 1.05em; width: auto; }
+    /* Badge pill has no side bearing, so wifi carries an extra 0.075em left
+       to keep the badge/wifi/battery/toggles gaps optically equal. */
+    .menubar .glyph.wifi { margin-left: 0.075em; }
     .menubar .item { display: flex; align-items: center; gap: 0.4em; }
     .menubar .item .sp { width: 1.3em; height: 1.3em; }
     .menubar .badge {
@@ -391,9 +394,9 @@
               <svg class="sp" viewBox="0 0 1024 1024" aria-hidden="true"><rect x="100" y="100" width="824" height="824" rx="186" fill="#fff" fill-opacity="0.18"/><path fill="#fff" d="M296 262H728A84 84 0 0 1 812 346V598A84 84 0 0 1 728 682H420L318 778L336 682H296A84 84 0 0 1 212 598V346A84 84 0 0 1 296 262Z"/><rect x="292" y="356" width="440" height="42" rx="21" fill="#2a6fe0" fill-opacity="0.35"/><rect x="280" y="437" width="372" height="70" rx="20" fill="#FFD84D"/><rect x="292" y="451" width="348" height="42" rx="21" fill="#2B2A5A"/><rect x="292" y="546" width="380" height="42" rx="21" fill="#2a6fe0" fill-opacity="0.35"/></svg>
               <span class="badge" id="badge">0</span>
             </div>
-            <svg class="glyph" viewBox="0 0 24 18" aria-hidden="true"><path d="M12 15.5a2 2 0 1 1 0 .01zM12 10.6c1.6 0 3.1.6 4.2 1.7l-1.6 1.6a3.7 3.7 0 0 0-5.2 0L7.8 12.3a5.9 5.9 0 0 1 4.2-1.7zm0-4.4c2.9 0 5.5 1.1 7.4 3l-1.6 1.6A8.3 8.3 0 0 0 12 8.4a8.3 8.3 0 0 0-5.8 2.4L4.6 9.2c1.9-1.9 4.5-3 7.4-3zm0-4.4c4.1 0 7.8 1.6 10.5 4.3l-1.6 1.6A12.8 12.8 0 0 0 12 4a12.8 12.8 0 0 0-8.9 3.7L1.5 6.1C4.2 3.4 7.9 1.8 12 1.8z"/></svg>
-            <svg class="glyph" viewBox="0 0 30 14" aria-hidden="true"><rect x="0.5" y="0.5" width="25" height="13" rx="3.5" fill="none" stroke="#fff" stroke-opacity="0.6"/><rect x="2" y="2" width="20" height="10" rx="2" /><path d="M27 4.5v5a2.5 2.5 0 0 0 0-5z" fill-opacity="0.6"/></svg>
-            <svg class="glyph" viewBox="0 0 24 18" aria-hidden="true"><rect x="1" y="1" width="22" height="7" rx="3.5" fill-opacity="0.45"/><circle cx="18.5" cy="4.5" r="2.7"/><rect x="1" y="10" width="22" height="7" rx="3.5" fill-opacity="0.45"/><circle cx="5.5" cy="13.5" r="2.7"/></svg>
+            <svg class="glyph wifi" viewBox="1.5 0 21 18" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M9.2 12.1a4 4 0 0 1 5.6 0" fill="none"/><path d="M6.5 9.4a7.8 7.8 0 0 1 11 0" fill="none"/><path d="M3.8 6.7a11.6 11.6 0 0 1 16.4 0" fill="none"/><circle cx="12" cy="15" r="1.4" fill="#fff" stroke="none"/></svg>
+            <svg class="glyph" viewBox="-0.6 0 30.3 14" aria-hidden="true"><rect x="1" y="1.5" width="24" height="11" rx="3.2" fill="none" stroke="#fff" stroke-opacity="0.55" stroke-width="1.2"/><rect x="2.9" y="3.4" width="20" height="7.2" rx="1.9"/><rect x="26.2" y="5" width="2.5" height="4" rx="1.25" fill-opacity="0.55"/></svg>
+            <svg class="glyph" viewBox="-0.3 0 24.6 18" aria-hidden="true"><rect x="1" y="1" width="22" height="7" rx="3.5" fill-opacity="0.45"/><circle cx="19" cy="4.5" r="2.9"/><rect x="1" y="10" width="22" height="7" rx="3.5" fill-opacity="0.45"/><circle cx="5" cy="13.5" r="2.9"/></svg>
             <span>Wed Sep 2&nbsp; 2:14 PM</span>
           </div>
         </div>
