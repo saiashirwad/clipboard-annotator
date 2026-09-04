@@ -24,10 +24,10 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .voice: "mic.fill"
-        case .shortcuts: "keyboard"
+        case .shortcuts: "keyboard.fill"
         case .profiles: "text.quote"
-        case .capture: "gearshape"
-        case .permissions: "checkmark.shield"
+        case .capture: "gearshape.fill"
+        case .permissions: "checkmark.shield.fill"
         }
     }
 
@@ -60,9 +60,15 @@ struct SettingsView: View {
         var problem: String?
     }
 
+    /// The smallest the window goes; it can be dragged larger.
     static let size = CGSize(width: 780, height: 620)
     private static let sidebarWidth: CGFloat = 200
     private static let titleBarHeight: CGFloat = 52
+    /// Cards stop stretching past this so a wide window stays readable.
+    private static let contentMaxWidth: CGFloat = 760
+
+    /// One sentence for the voice shortcut, used wherever it is listed.
+    static let voiceNoteDetail = "Select text, then hold to speak, or tap to start and tap again to save."
 
     init(
         settings: AppSettings,
@@ -108,14 +114,18 @@ struct SettingsView: View {
                         }
                     }
                     .padding(24)
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .frame(maxWidth: Self.contentMaxWidth, alignment: .topLeading)
+                    .frame(maxWidth: .infinity)
                     .id(tab)
                 }
                 .scrollIndicators(.automatic)
             }
             .background(Color(nsColor: .windowBackgroundColor))
         }
-        .frame(width: Self.size.width, height: Self.size.height)
+        .frame(
+            minWidth: Self.size.width, maxWidth: .infinity,
+            minHeight: Self.size.height, maxHeight: .infinity
+        )
         .ignoresSafeArea()
         .overlayScrollers()
     }
@@ -142,35 +152,6 @@ struct SettingsView: View {
                         onSelectProfile(profile.id)
                     }
                 }
-                Button {
-                    newProfile = NewProfileDraft(name: "\(profileEditor.draft.name) Copy")
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 11, weight: .semibold))
-                        .frame(width: 26, height: 26)
-                        .background(Circle().fill(Color.primary.opacity(0.06)))
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .help("New template from this draft…")
-                .accessibilityLabel("New template")
-                .popover(
-                    isPresented: Binding(
-                        get: { newProfile != nil },
-                        set: { if !$0 { newProfile = nil } }
-                    ),
-                    arrowEdge: .bottom
-                ) {
-                    NewProfilePopover(
-                        name: Binding(
-                            get: { newProfile?.name ?? "" },
-                            set: { newProfile?.name = $0; newProfile?.problem = nil }
-                        ),
-                        problem: newProfile?.problem,
-                        onCommit: createProfile
-                    )
-                }
             }
             Text("The active template shapes the Markdown when you export a stack.")
                 .font(.caption)
@@ -181,20 +162,7 @@ struct SettingsView: View {
     private var profileEditorPane: some View {
         VStack(alignment: .leading, spacing: 14) {
             ProfileNameField(text: $profileEditor.draft.name) {
-                Button(action: deleteProfile) {
-                    Image(systemName: "trash")
-                        .font(.system(size: 12, weight: .medium))
-                        .frame(width: 26, height: 26)
-                        .background(Circle().fill(Color.primary.opacity(0.06)))
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .disabled(!profileEditor.canDelete || profileEditor.isDirty)
-                .help(profileEditor.isDirty
-                    ? "Save or revert changes before deleting."
-                    : "Delete this template…")
-                .accessibilityLabel("Delete template")
+                profileTitleActions
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -207,11 +175,11 @@ struct SettingsView: View {
                     .padding(.vertical, 8)
                     .frame(minHeight: 140, maxHeight: 140)
                     .background(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        RoundedRectangle(cornerRadius: SettingsMetrics.cardRadius, style: .continuous)
                             .fill(Color(nsColor: .textBackgroundColor))
                     )
                     .overlay(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        RoundedRectangle(cornerRadius: SettingsMetrics.cardRadius, style: .continuous)
                             .strokeBorder(Color.primary.opacity(0.1), lineWidth: 1)
                     )
                     .accessibilityLabel("Template instructions")
@@ -220,17 +188,16 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                SettingsCaption("Include with each note")
+            SettingsSection("Include with each note") {
                 SettingsCard {
                     SettingsToggleRow("Date heading", isOn: $profileEditor.draft.includeHeading)
-                    Divider().padding(.leading, 14)
+                    SettingsDivider(pastIcon: false)
                     SettingsToggleRow("Application", isOn: $profileEditor.draft.includeApplication)
-                    Divider().padding(.leading, 14)
+                    SettingsDivider(pastIcon: false)
                     SettingsToggleRow("Window title", isOn: $profileEditor.draft.includeWindow)
-                    Divider().padding(.leading, 14)
+                    SettingsDivider(pastIcon: false)
                     SettingsToggleRow("Link or working directory", isOn: $profileEditor.draft.includeLink)
-                    Divider().padding(.leading, 14)
+                    SettingsDivider(pastIcon: false)
                     SettingsToggleRow("Timestamps", isOn: $profileEditor.draft.includeTimestamps)
                 }
             }
@@ -242,37 +209,56 @@ struct SettingsView: View {
                     isOn: $profileEditor.draft.clearSessionAfterExport
                 )
             }
-
-            saveBar
         }
         .animation(.snappy(duration: 0.22), value: profileEditor.isDirty)
     }
 
-    @ViewBuilder
-    private var saveBar: some View {
-        if profileEditor.isDirty {
-            HStack(spacing: 10) {
-                Image(systemName: "pencil.circle.fill")
-                    .foregroundStyle(.tint)
-                Text("Unsaved changes")
-                    .font(.callout.weight(.medium))
-                Spacer()
-                Button("Revert", action: profileEditor.revert)
-                Button("Save", action: saveProfile)
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut("s", modifiers: .command)
+    /// Save and Revert appear beside the name while there are changes;
+    /// New and Delete are always there. Everything shares one baseline.
+    private var profileTitleActions: some View {
+        HStack(spacing: 8) {
+            if profileEditor.isDirty {
+                HStack(spacing: 6) {
+                    Button("Revert", action: profileEditor.revert)
+                    Button("Save", action: saveProfile)
+                        .buttonStyle(.borderedProminent)
+                        .keyboardShortcut("s", modifiers: .command)
+                }
+                .controlSize(.small)
+                .transition(.opacity)
+                Divider()
+                    .frame(height: 16)
+                    .padding(.horizontal, 2)
+                    .transition(.opacity)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color.accentColor.opacity(0.08))
+            CircleIconButton("plus", help: "New template from this draft…", label: "New template") {
+                newProfile = NewProfileDraft(name: "\(profileEditor.draft.name) Copy")
+            }
+            .popover(
+                isPresented: Binding(
+                    get: { newProfile != nil },
+                    set: { if !$0 { newProfile = nil } }
+                ),
+                arrowEdge: .bottom
+            ) {
+                NewProfilePopover(
+                    name: Binding(
+                        get: { newProfile?.name ?? "" },
+                        set: { newProfile?.name = $0; newProfile?.problem = nil }
+                    ),
+                    problem: newProfile?.problem,
+                    onCommit: createProfile
+                )
+            }
+            CircleIconButton(
+                "trash",
+                help: profileEditor.isDirty
+                    ? "Save or revert changes before deleting."
+                    : "Delete this template…",
+                label: "Delete template",
+                action: deleteProfile
             )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(Color.accentColor.opacity(0.2), lineWidth: 1)
-            )
-            .transition(.opacity.combined(with: .move(edge: .bottom)))
+            .disabled(!profileEditor.canDelete || profileEditor.isDirty)
         }
     }
 
@@ -291,46 +277,27 @@ struct SettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(SettingsMetrics.rowInset)
         }
     }
 
     private var voiceTab: some View {
         VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 8) {
-                SettingsCaption("Voice note")
+            SettingsSection("How it works") {
                 SettingsCard {
-                    fixedShortcutRow(
-                        icon: "mic.fill",
-                        title: "Voice note",
-                        detail: "Select text, then use this shortcut to say what you think.",
-                        shortcut: VoiceModifierShortcut.displayString
-                    )
+                    SettingsIconRow(icon: "mic.fill", title: "Voice note", detail: Self.voiceNoteDetail) {
+                        StaticKeycap(VoiceModifierShortcut.displayString)
+                    }
+                    SettingsDivider()
+                    HowToRow(icon: "hand.raised.fill", lead: "Hold", sentence: "Speak, then release to save.")
+                    SettingsDivider()
+                    HowToRow(icon: "hand.tap.fill", lead: "Tap", sentence: "Talk as long as you like, tap again to save.")
+                    SettingsDivider()
+                    HowToRow(icon: "escape", lead: "Esc", sentence: "Discard the recording.")
                 }
             }
-            VStack(alignment: .leading, spacing: 8) {
-                SettingsCaption("How it works")
-                SettingsCard {
-                    howItWorksRow(
-                        icon: "hand.tap.fill",
-                        lead: "Hold",
-                        sentence: "Hold \(voiceComboDisplay), speak, release to save."
-                    )
-                    Divider().padding(.leading, 56)
-                    howItWorksRow(
-                        icon: "hand.point.up.left.fill",
-                        lead: "Tap",
-                        sentence: "Tap \(voiceComboDisplay) once to start, tap it again to save. Good for longer thoughts."
-                    )
-                    Divider().padding(.leading, 56)
-                    howItWorksRow(
-                        icon: "escape",
-                        lead: "Esc",
-                        sentence: "Press Escape while the panel is open to discard the recording."
-                    )
-                }
-            }
-            VStack(alignment: .leading, spacing: 8) {
-                SettingsCaption("Voice needs")
+            SettingsSection("Needed for voice") {
                 PermissionCapabilityList(
                     permissionState: permissionState,
                     onShowAccessibilityHelper: onShowAccessibilityHelper,
@@ -342,32 +309,23 @@ struct SettingsView: View {
         }
     }
 
-    private var voiceComboDisplay: String {
-        VoiceModifierShortcut.displayString
-    }
-
     private var shortcutsTab: some View {
         VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 8) {
-                SettingsCaption("Making notes")
+            SettingsSection("Making notes") {
                 SettingsCard {
-                    fixedShortcutRow(
-                        icon: "mic.fill",
-                        title: "Voice note",
-                        detail: "Hold to speak, or tap to start and tap again to save.",
-                        shortcut: VoiceModifierShortcut.displayString
-                    )
-                    Divider().padding(.leading, 56)
+                    SettingsIconRow(icon: "mic.fill", title: "Voice note", detail: Self.voiceNoteDetail) {
+                        StaticKeycap(VoiceModifierShortcut.displayString)
+                    }
+                    SettingsDivider()
                     shortcutRow(
-                        icon: "text.viewfinder",
+                        icon: "square.and.pencil",
                         title: "Typed note",
-                        detail: "Opens a note box for the text you have selected. For when you can't talk.",
+                        detail: "Opens a note box for the selected text. For when you can't talk.",
                         slot: .capture
                     )
                 }
             }
-            VStack(alignment: .leading, spacing: 8) {
-                SettingsCaption("Your stack")
+            SettingsSection("Your stack") {
                 SettingsCard {
                     shortcutRow(
                         icon: "doc.on.clipboard",
@@ -375,25 +333,25 @@ struct SettingsView: View {
                         detail: settings.stackExportMode.shortcutDetail,
                         slot: .copy
                     )
-                    Divider().padding(.leading, 56)
+                    SettingsDivider()
                     shortcutRow(
                         icon: "square.stack.3d.up",
                         title: "Show stack",
                         detail: "Opens the window with all your notes.",
                         slot: .stack
                     )
-                    Divider().padding(.leading, 56)
+                    SettingsDivider()
                     shortcutRow(
                         icon: "arrow.left.arrow.right",
                         title: "Switch stack",
                         detail: "Jump between stacks, or make a new one by typing its name.",
                         slot: .switchSession
                     )
-                    Divider().padding(.leading, 56)
+                    SettingsDivider()
                     shortcutRow(
                         icon: "trash",
                         title: "Clear stack",
-                        detail: "Undo from the menu bar, or with ⌘Z in the stack window.",
+                        detail: "Empties the current stack. Undo with ⌘Z in the stack window.",
                         slot: .clear
                     )
                 }
@@ -411,57 +369,10 @@ struct SettingsView: View {
         detail: String,
         slot: ShortcutSlot
     ) -> some View {
-        HStack(spacing: 14) {
-            SettingsIcon(icon)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.body.weight(.medium))
-                Text(detail)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 12)
+        SettingsIconRow(icon: icon, title: title, detail: detail) {
             KeyRecorder(combo: shortcutBinding(for: slot))
                 .fixedSize()
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-    }
-
-    private func fixedShortcutRow(
-        icon: String,
-        title: String,
-        detail: String,
-        shortcut: String
-    ) -> some View {
-        HStack(spacing: 14) {
-            SettingsIcon(icon)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.body.weight(.medium))
-                Text(detail)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 12)
-            Keycap(shortcut)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-    }
-
-    private func howItWorksRow(icon: String, lead: String, sentence: String) -> some View {
-        HStack(spacing: 14) {
-            SettingsIcon(icon)
-            (
-                Text(lead).font(.body.weight(.semibold))
-                    + Text(" " + sentence).font(.callout).foregroundStyle(.secondary)
-            )
-            .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
     }
 
     @ViewBuilder
@@ -491,36 +402,25 @@ struct SettingsView: View {
     // MARK: - Capture
 
     private var captureTab: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 8) {
-                SettingsCaption("Stack export")
-                SettingsCard {
-                    SettingsToggleRow(
-                        "Paste straight into the app you are in",
-                        subtitle: "The Markdown lands where your cursor is, without a separate paste.",
-                        isOn: $settings.pasteDirectly
-                    )
-                }
-            }
-            VStack(alignment: .leading, spacing: 8) {
-                SettingsCaption("After saving a note")
-                SettingsCard {
-                    SettingsToggleRow(
-                        "Return to the previous app",
-                        subtitle: "Hands focus back to where you were reading.",
-                        isOn: $settings.restoreFocusAfterSave
-                    )
-                }
-            }
-            VStack(alignment: .leading, spacing: 8) {
-                SettingsCaption("Startup")
-                SettingsCard {
-                    SettingsToggleRow(
-                        "Launch at login",
-                        subtitle: "Keeps the shortcuts ready as soon as you sign in.",
-                        isOn: $settings.launchAtLogin
-                    )
-                }
+        SettingsSection("Behavior") {
+            SettingsCard {
+                SettingsToggleRow(
+                    "Paste straight into the app you are in",
+                    subtitle: "The Markdown lands where your cursor is, without a separate paste.",
+                    isOn: $settings.pasteDirectly
+                )
+                SettingsDivider(pastIcon: false)
+                SettingsToggleRow(
+                    "Return to the previous app after saving",
+                    subtitle: "Hands focus back to where you were reading.",
+                    isOn: $settings.restoreFocusAfterSave
+                )
+                SettingsDivider(pastIcon: false)
+                SettingsToggleRow(
+                    "Launch at login",
+                    subtitle: "Keeps the shortcuts ready as soon as you sign in.",
+                    isOn: $settings.launchAtLogin
+                )
             }
         }
     }
@@ -529,22 +429,26 @@ struct SettingsView: View {
 
     private var permissionsTab: some View {
         VStack(alignment: .leading, spacing: 14) {
-            PermissionCapabilityList(
-                permissionState: permissionState,
-                onShowAccessibilityHelper: onShowAccessibilityHelper,
-                onShowInputMonitoringHelper: onShowInputMonitoringHelper,
-                scope: .accessibility
-            )
-            SettingsCard {
-                SettingsRow(
-                    "Setup assistant",
-                    subtitle: "Walk through permissions and the voice model again."
-                ) {
-                    Button("Run Setup Again…", action: onRunSetup)
+            SettingsSection("Needed for every note") {
+                PermissionCapabilityList(
+                    permissionState: permissionState,
+                    onShowAccessibilityHelper: onShowAccessibilityHelper,
+                    onShowInputMonitoringHelper: onShowInputMonitoringHelper,
+                    scope: .accessibility
+                )
+            }
+            SettingsSection("Setup") {
+                SettingsCard {
+                    SettingsRow(
+                        "Setup assistant",
+                        subtitle: "Walk through permissions and the voice model again."
+                    ) {
+                        Button("Run Setup Again…", action: onRunSetup)
+                    }
                 }
             }
             Label {
-                Text("Accessibility lets Sendpoint read the text you select, for both kinds of note. Voice also needs Input Monitoring for \(VoiceModifierShortcut.displayString), the microphone, and a one-time voice-model download; audio never leaves this Mac.")
+                Text("Text, audio, and transcription never leave this Mac.")
             } icon: {
                 Image(systemName: "lock.shield")
             }
@@ -582,6 +486,7 @@ struct SettingsView: View {
 }
 
 /// A small anchored prompt: type a name, press Return.
+/// A small anchored prompt: type a name, press Return.
 private struct NewProfilePopover: View {
     @Binding var name: String
     let problem: String?
@@ -615,7 +520,37 @@ private struct NewProfilePopover: View {
     }
 }
 
+
 // MARK: - Building blocks
+
+/// A round, quiet icon button for secondary actions beside a title.
+private struct CircleIconButton: View {
+    let icon: String
+    let help: String
+    let label: String
+    let action: () -> Void
+
+    init(_ icon: String, help: String, label: String, action: @escaping () -> Void) {
+        self.icon = icon
+        self.help = help
+        self.label = label
+        self.action = action
+    }
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .medium))
+                .frame(width: 26, height: 26)
+                .background(Circle().fill(Color.primary.opacity(0.06)))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .help(help)
+        .accessibilityLabel(label)
+    }
+}
 
 /// The source list on the left, with a coloured tile per section.
 private struct SettingsSidebar: View {
@@ -634,7 +569,7 @@ private struct SettingsSidebar: View {
         }
         .padding(.horizontal, 10)
         .frame(maxHeight: .infinity, alignment: .top)
-        .background(Color.primary.opacity(0.035))
+        .background(SidebarMaterial().ignoresSafeArea())
     }
 }
 
@@ -648,16 +583,7 @@ private struct SettingsSidebarRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 9) {
-                Image(systemName: tab.icon)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 24, height: 24)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(tab.tint)
-                    )
-                    .shadow(color: tab.tint.opacity(0.35), radius: 2, y: 1)
-                    .accessibilityHidden(true)
+                SidebarTile(icon: tab.icon, tint: tab.tint)
                 Text(tab.title)
                     .font(.system(size: 13, weight: isSelected ? .medium : .regular))
                 Spacer(minLength: 0)
@@ -677,6 +603,47 @@ private struct SettingsSidebarRow: View {
         )
         .onHover { hovering = $0 }
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+    }
+}
+
+/// A coloured tile in the System Settings idiom: a soft top-lit gradient
+/// over the tint, a hairline rim that catches the light, and a white glyph.
+private struct SidebarTile: View {
+    let icon: String
+    let tint: Color
+
+    private let shape = RoundedRectangle(cornerRadius: 6.5, style: .continuous)
+
+    var body: some View {
+        Image(systemName: icon)
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(.white)
+            .shadow(color: .black.opacity(0.18), radius: 0.5, y: 0.5)
+            .frame(width: 24, height: 24)
+            .background(
+                shape.fill(tint)
+                    .overlay(
+                        shape.fill(
+                            LinearGradient(
+                                colors: [.white.opacity(0.28), .white.opacity(0.0), .black.opacity(0.06)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                    )
+            )
+            .overlay(
+                shape.strokeBorder(
+                    LinearGradient(
+                        colors: [.white.opacity(0.55), .white.opacity(0.08)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    ),
+                    lineWidth: 0.75
+                )
+            )
+            .clipShape(shape)
+            .accessibilityHidden(true)
     }
 }
 
@@ -728,113 +695,13 @@ private struct ProfileNameField<Accessory: View>: View {
                     .accessibilityLabel("Template name")
                 accessory()
             }
+            .frame(minHeight: 30)
             Rectangle()
                 .fill(focused ? Color.accentColor.opacity(0.6) : Color.primary.opacity(0.1))
                 .frame(height: 1)
         }
         .padding(.horizontal, 2)
         .animation(.easeOut(duration: 0.15), value: focused)
-    }
-}
-
-private struct SettingsCaption: View {
-    let text: String
-
-    init(_ text: String) { self.text = text }
-
-    var body: some View {
-        Text(text)
-            .font(.caption.weight(.semibold))
-            .textCase(.uppercase)
-            .tracking(0.5)
-            .foregroundStyle(.secondary)
-            .padding(.leading, 2)
-    }
-}
-
-/// A raised, bordered group of rows.
-private struct SettingsCard<Content: View>: View {
-    @ViewBuilder let content: () -> Content
-
-    var body: some View {
-        VStack(spacing: 0) {
-            content()
-        }
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-        )
-    }
-}
-
-private struct SettingsRow<Trailing: View>: View {
-    let title: String
-    let subtitle: String?
-    @ViewBuilder let trailing: () -> Trailing
-
-    init(_ title: String, subtitle: String? = nil, @ViewBuilder trailing: @escaping () -> Trailing) {
-        self.title = title
-        self.subtitle = subtitle
-        self.trailing = trailing
-    }
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.body)
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            Spacer(minLength: 12)
-            trailing()
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, subtitle == nil ? 9 : 11)
-    }
-}
-
-private struct SettingsToggleRow: View {
-    let title: String
-    let subtitle: String?
-    @Binding var isOn: Bool
-
-    init(_ title: String, subtitle: String? = nil, isOn: Binding<Bool>) {
-        self.title = title
-        self.subtitle = subtitle
-        _isOn = isOn
-    }
-
-    var body: some View {
-        SettingsRow(title, subtitle: subtitle) {
-            Toggle(title, isOn: $isOn)
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.small)
-        }
-    }
-}
-
-private struct SettingsIcon: View {
-    let name: String
-
-    init(_ name: String) { self.name = name }
-
-    var body: some View {
-        Image(systemName: name)
-            .font(.system(size: 14, weight: .medium))
-            .foregroundStyle(.tint)
-            .frame(width: 30, height: 30)
-            .background(.tint.opacity(0.1), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .accessibilityHidden(true)
     }
 }
 

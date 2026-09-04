@@ -125,88 +125,35 @@ struct SetupView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("How to use it")
                 .font(.headline)
-            SetupCard {
-                howToRow(
-                    icon: "hand.tap.fill",
+            SettingsCard {
+                HowToRow(
+                    icon: "hand.raised.fill",
                     lead: "Hold",
                     sentence: "Speak, then release to save.",
                     keycap: VoiceModifierShortcut.displayString
                 )
-                Divider().padding(.leading, 56)
-                howToRow(
-                    icon: "hand.point.up.left.fill",
+                SettingsDivider()
+                HowToRow(
+                    icon: "hand.tap.fill",
                     lead: "Tap",
                     sentence: "Talk as long as you like, tap again to save.",
                     keycap: VoiceModifierShortcut.displayString
                 )
-                Divider().padding(.leading, 56)
-                howToRow(
+                SettingsDivider()
+                HowToRow(
                     icon: "escape",
                     lead: "Esc",
-                    sentence: "Discard the recording.",
-                    keycap: nil
+                    sentence: "Discard the recording."
                 )
-                Divider().padding(.leading, 56)
-                howToRow(
-                    icon: "keyboard",
+                SettingsDivider()
+                HowToRow(
+                    icon: "square.and.pencil",
                     lead: "Type instead",
                     sentence: "For when you can't talk out loud.",
                     keycap: settings.captureCombo.displayString
                 )
             }
         }
-    }
-
-    private func howToRow(icon: String, lead: String, sentence: String, keycap: String?) -> some View {
-        HStack(spacing: 12) {
-            SetupIcon(icon)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(lead)
-                    .font(.body.weight(.medium))
-                Text(sentence)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 8)
-            if let keycap {
-                Keycap(keycap)
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-    }
-}
-
-private struct SetupCard<Content: View>: View {
-    @ViewBuilder let content: () -> Content
-
-    var body: some View {
-        VStack(spacing: 0) {
-            content()
-        }
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-        )
-    }
-}
-
-private struct SetupIcon: View {
-    let name: String
-
-    init(_ name: String) { self.name = name }
-
-    var body: some View {
-        Image(systemName: name)
-            .font(.system(size: 14, weight: .medium))
-            .foregroundStyle(.tint)
-            .frame(width: 30, height: 30)
-            .background(.tint.opacity(0.1), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .accessibilityHidden(true)
     }
 }
 
@@ -241,33 +188,28 @@ struct PermissionCapabilityList: View {
 
     @ViewBuilder
     private var capabilityRows: some View {
-        VStack(spacing: 0) {
+        SettingsCard {
             if scope.showsAccessibility {
                 accessibilityRow
             }
             if scope.showsInputMonitoring {
                 if scope.showsAccessibility {
-                    Divider().padding(.leading, 46)
+                    SettingsDivider()
                 }
                 inputMonitoringRow
             }
             if scope.showsMicrophone {
                 if scope.showsAccessibility || scope.showsInputMonitoring {
-                    Divider().padding(.leading, 46)
+                    SettingsDivider()
                 }
                 microphoneRow
             }
             if scope.showsVoiceModel {
                 if scope.showsAccessibility || scope.showsInputMonitoring || scope.showsMicrophone {
-                    Divider().padding(.leading, 46)
+                    SettingsDivider()
                 }
                 voiceModelRow
             }
-        }
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(.separator.opacity(0.65))
         }
     }
 
@@ -311,12 +253,19 @@ struct PermissionCapabilityList: View {
         CapabilityRow(
             icon: "waveform",
             title: "Local voice model",
-            reason: "Turns your speech into text on this Mac. One-time 460 MB download.",
+            reason: voiceModelReason,
             status: voiceModelStatus,
             actionTitle: voiceModelActionTitle,
             showsProgress: voiceModelIsDownloading,
             action: performVoiceModelAction
         )
+    }
+
+    private var voiceModelReason: String {
+        if case .ready = permissionState.localVoiceModel {
+            return "Speech to text with Parakeet v3, on this Mac."
+        }
+        return "Speech to text with Parakeet v3. One-time 460 MB download."
     }
 
     private var accessibilityStatus: CapabilityStatus {
@@ -453,6 +402,14 @@ private enum CapabilityStatus {
         case .ready: .green
         }
     }
+
+    /// Ready reads quietly once everything is in place; only trouble is loud.
+    var textColor: Color {
+        switch self {
+        case .neutral, .ready: .secondary
+        case .attention: .orange
+        }
+    }
 }
 
 private struct CapabilityRow: View {
@@ -465,47 +422,36 @@ private struct CapabilityRow: View {
     let action: () -> Void
 
     var body: some View {
-        HStack(alignment: .center, spacing: 14) {
-            Image(systemName: icon)
-                .font(.title3)
-                .foregroundStyle(.tint)
-                .frame(width: 32, height: 32)
-                .background(.tint.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.headline)
-                Text(reason)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer(minLength: 12)
-
+        SettingsIconRow(icon: icon, title: title, detail: reason) {
             VStack(alignment: .trailing, spacing: 7) {
-                HStack(spacing: 6) {
-                    if showsProgress {
-                        ProgressView()
-                            .controlSize(.small)
-                    } else {
-                        Circle()
-                            .fill(status.color)
-                            .frame(width: 8, height: 8)
-                    }
-                    Text(status.title)
-                        .font(.callout)
-                        .foregroundStyle(status.color)
-                }
-
+                statusLabel
                 if let actionTitle {
                     Button(actionTitle, action: action)
                         .controlSize(.small)
                 }
             }
         }
-        .padding(14)
+    }
+
+    private var statusLabel: some View {
+        HStack(spacing: 5) {
+            if showsProgress {
+                ProgressView()
+                    .controlSize(.small)
+            } else if case .ready = status {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.green)
+            } else {
+                Circle()
+                    .fill(status.color)
+                    .frame(width: 7, height: 7)
+            }
+            Text(status.title)
+                .font(.callout)
+                .foregroundStyle(status.textColor)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 

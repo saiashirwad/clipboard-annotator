@@ -881,7 +881,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: SettingsView.size),
-            styleMask: [.titled, .closable, .fullSizeContentView],
+            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
@@ -894,7 +894,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.toolbarStyle = .unified
         window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
-        window.center()
         let profileEditor = ProfileEditorState(settings: settings)
         self.profileEditor = profileEditor
         let settingsView = SettingsView(
@@ -917,8 +916,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let hosting = NSHostingView(rootView: settingsView)
         // The sidebar owns the title-bar band; no inset for the toolbar.
         hosting.safeAreaRegions = []
+        // SwiftUI publishes only its minimum, so the window never shrinks
+        // below it and never resizes itself when a tab changes.
+        hosting.sizingOptions = [.minSize]
         window.contentView = hosting
+        window.contentMinSize = SettingsView.size
         window.setContentSize(SettingsView.size)
+        window.center()
+        // Remembers a larger size between openings, if the user made one.
+        window.setFrameAutosaveName("SettingsWindow")
         window.delegate = self
         settingsWindow = window
         NSApp.activate(ignoringOtherApps: true)
@@ -944,6 +950,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 extension AppDelegate: NSWindowDelegate {
+    func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
+        guard sender === settingsWindow else { return frameSize }
+        let minimum = sender.frameRect(forContentRect: NSRect(origin: .zero, size: SettingsView.size)).size
+        return NSSize(
+            width: max(frameSize.width, minimum.width),
+            height: max(frameSize.height, minimum.height)
+        )
+    }
+
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         guard sender === settingsWindow, let profileEditor else { return true }
         return ProfileDialogs.shouldClose(profileEditor)
