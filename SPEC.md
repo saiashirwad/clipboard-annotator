@@ -56,7 +56,6 @@ The app remains a small macOS menu-bar utility. There is no persistent screen bu
 - A note-format instruction for `AGENTS.md` or `CLAUDE.md`; the prompt preamble carries that instruction on every export.
 - A plugin framework or protocol hierarchy for provenance adapters. A small bundle-ID registry is enough.
 - The Composable Architecture dependency or a partial TCA architecture.
-- Input Monitoring permission while global shortcuts continue to use Carbon-compatible registration.
 
 Bookmarks may become a separate product later. The provenance types should be reusable by it, but this implementation must not add bookmark abstractions, screenshot fields, attachment types, or speculative storage code.
 
@@ -81,6 +80,7 @@ The existing shortcuts remain conceptually unchanged:
 
 - Capture shortcut: read the current selection, show the note panel, and accept plain text.
 - Hold-to-record shortcut: read the current selection, record while held, transcribe locally, and save the transcript.
+- Voice uses the fixed modifier-only `⌥⌘` gesture; key-based global shortcuts remain rebindable Carbon hotkeys.
 
 Both paths support a missing selection:
 
@@ -296,11 +296,11 @@ Requirements:
 - Direct-paste setting.
 - Restore-focus-after-save setting.
 - Launch-at-login setting.
-- Shortcut settings, subject to the KeyboardShortcuts decision below.
+- Key-based shortcut settings, subject to the KeyboardShortcuts decision below. The fixed voice gesture is not persisted.
 
 Do not put profiles or the active profile pointer in `StoreDocument`.
 
-No compatibility code is required for the old `includeSource`, `includeHeading`, or `clearAfterCopy` keys.
+No compatibility code is required for the old `includeSource`, `includeHeading`, `clearAfterCopy`, or `voiceCaptureCombo` keys.
 
 ## Provenance detection
 
@@ -392,6 +392,7 @@ Show:
 
 - A short statement that notes, audio, transcription, and provenance remain on this Mac.
 - Accessibility — required to read selections and paste.
+- Input Monitoring — required to recognize the modifier-only voice gesture in other apps.
 - Microphone — required for voice capture.
 - Local speech model — required for local transcription.
 
@@ -410,7 +411,7 @@ Persist `hasCompletedSetup` in `AppSettings`. Show setup automatically on first 
 
 ### System Settings helper window
 
-Some TCC grants require manual work in System Settings. When the app opens the Accessibility privacy pane, also show a small separate helper window that remains visible beside System Settings:
+Some TCC grants require manual work in System Settings. When the app opens the Accessibility or Input Monitoring privacy pane, also show a small separate helper window that remains visible beside System Settings:
 
 - Name the exact permission.
 - Give no more than three concrete steps.
@@ -421,13 +422,14 @@ Some TCC grants require manual work in System Settings. When the app opens the A
 
 This helper must explain the real system UI rather than imitate it. It cannot claim to toggle the permission itself.
 
-Input Monitoring is not required by the current Carbon global-hotkey path and must not appear in setup. Do not ask for a privacy-sensitive grant merely because another dictation app does. If a future shortcut implementation uses an event tap that genuinely requires Input Monitoring, add that permission and its matching helper then.
+The fixed modifier-only voice gesture uses a passive `CGEventTap`, so it requires Input Monitoring. Key-based shortcuts stay on Carbon and do not use that grant.
 
 ### Settings permission section
 
 Mirror setup status in Settings:
 
 - Accessibility.
+- Input Monitoring.
 - Microphone.
 - Local speech model.
 
@@ -436,15 +438,16 @@ Provide a guided `Set Up Permissions…` action that reopens the setup window.
 Permission actions:
 
 1. Request Accessibility through the existing system API and offer the System Settings helper when manual action remains.
-2. Request microphone access through the system dialog.
-3. Download the local speech model with visible progress and recoverable failure.
-4. Refresh displayed state when the app becomes active again.
+2. Request Input Monitoring and offer its System Settings helper when manual action remains.
+3. Request microphone access through the system dialog.
+4. Download the local speech model with visible progress and recoverable failure.
+5. Refresh displayed state when the app becomes active again.
 
 macOS controls these grants separately; the UI must not claim there is one combined permission.
 
 Keep `NSAppleEventsUsageDescription` generic: the app reads extra provenance such as an active tab URL from supported apps when available. Do not frame one supported app as a setup requirement.
 
-Do not request Screen Recording or Input Monitoring permission.
+Do not request Screen Recording permission.
 
 ## Observation migration
 
@@ -674,13 +677,12 @@ Rules:
 A later cleanup in the same implementation may replace `HotKeyCenter`, `KeyCombo`, and `KeyRecorder` with Sindre Sorhus's `KeyboardShortcuts` package, but only after proving all existing behavior:
 
 - Global key-down capture.
-- Distinct key-down/key-up callbacks for hold-to-record.
-- Rebindable recorder controls in Settings.
+- Rebindable recorder controls in Settings for key-based shortcuts.
 - Disabled/invalid shortcut handling.
 - Shortcut display in menu items.
 - Persistence across launches.
 
-Perform this as a separate commit or milestone after sessions, provenance, and profiles work. If the library cannot preserve press-and-hold voice semantics without custom event code, keep the current Carbon implementation and do not run two global-hotkey systems together.
+The fixed voice gesture stays on its passive event tap. Do not add a second voice registration through Carbon or a shortcut package.
 
 ## Store and service API responsibilities
 
@@ -888,7 +890,7 @@ Goal: remove avoidable custom shortcut code only if the package preserves behavi
 
 Checkpoint:
 
-- Capture, hold/release voice, copy/paste, show stack, and clear shortcuts remain rebindable and survive restart.
+- The fixed `⌥⌘` voice gesture preserves hold/release behavior; key-based shortcuts remain rebindable and survive restart.
 - No duplicate hotkey registration exists.
 - The actual app passes the end-to-end scenarios below.
 
@@ -928,14 +930,14 @@ Do not unit-test Accessibility or TCC. Verify those against the real apps.
 8. Switch to Coherent. Export begins with the exact coherent preamble once.
 9. Edit Coherent's draft, then revert. Export remains unchanged. Edit again and save as a new profile. Both profiles remain distinct after restart.
 10. Enable clear-after-export. Export A, verify A empties, B is untouched, Markdown remains on the system clipboard, and undo restores A.
-11. Rebind every shortcut and restart. Each new binding still works, including key release for voice.
+11. Rebind every key-based shortcut and restart. Each new binding works; `⌥⌘` remains the sole voice keyboard gesture.
 12. Inspect the rendered preview. It shows the same semantic order and fields as the copied Markdown without presenting raw Markdown syntax as the main view.
 13. Press and release the voice shortcut before recording starts. The overlay disappears cleanly, no annotation is saved, and the next voice capture works.
 14. Press Escape during starting, recording, transcribing, and failure. Each state tears down without leaving a panel or accepting a late result.
 15. Capture from an unsupported app such as Chrome before a Chrome enricher exists. Provenance still contains the app identity and generic window title.
 16. Launch with no setup flag. The setup window explains each capability, and text-only continuation remains available after Accessibility is granted.
 17. Open Accessibility Settings from setup. The separate helper window remains visible, reflects the real grant, and closes when access appears.
-18. Confirm that Input Monitoring is never requested by this build.
+18. Grant Input Monitoring and confirm that `⌥⌘` starts and ends voice capture while another app is frontmost.
 
 ## Final architecture
 
@@ -973,6 +975,6 @@ Global shortcuts / menu
 - Preserve voice hold/release semantics during any shortcut refactor.
 - Never use `Task.detached` for lifecycle-owned work; cancel retained tasks and reject late results by capture identity.
 - Do not add TCA or another state architecture beside the native Observation model.
-- Request only permissions the current implementation needs; Carbon hotkeys do not justify Input Monitoring.
+- Request only permissions the current implementation needs; the passive modifier-only voice event tap justifies Input Monitoring, while Carbon hotkeys do not.
 - Make a clean cutover: remove obsolete fields, globals, settings keys, code paths, imports, and files after callers move.
 - Do not add bookmark, screenshot, iCloud, database, browser-generalization, or template-engine code.

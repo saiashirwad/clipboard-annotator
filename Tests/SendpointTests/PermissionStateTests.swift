@@ -102,6 +102,8 @@ final class PermissionStateTests: XCTestCase {
     private func services(
         accessibility: AccessibilityPermissionState = .granted,
         requestAccessibility: Bool = true,
+        inputMonitoring: InputMonitoringPermissionState = .granted,
+        requestInputMonitoring: Bool = true,
         microphone: MicrophonePermissionState = .granted,
         requestMicrophone: Bool = true,
         modelReady: Bool = true,
@@ -113,11 +115,14 @@ final class PermissionStateTests: XCTestCase {
         PermissionServices(
             accessibilityStatus: { accessibility },
             requestAccessibility: { requestAccessibility },
+            inputMonitoringStatus: { inputMonitoring },
+            requestInputMonitoring: { requestInputMonitoring },
             microphoneStatus: { microphone },
             requestMicrophone: { requestMicrophone },
             voiceModelFilesExist: modelFilesExist ?? { modelReady },
             downloadVoiceModel: downloadModel,
             openAccessibilitySettings: {},
+            openInputMonitoringSettings: {},
             openMicrophoneSettings: {}
         )
     }
@@ -139,25 +144,31 @@ final class PermissionStateTests: XCTestCase {
         ]
 
         for accessibility in accessibilityStates {
-            for microphone in microphoneStates {
-                for modelReady in [false, true] {
-                    let state = PermissionState(services: services(
-                        accessibility: accessibility,
-                        microphone: microphone,
-                        modelReady: modelReady
-                    ))
-                    state.refresh()
-                    await state.waitForIdle()
+            for inputMonitoring in [InputMonitoringPermissionState.notGranted, .granted] {
+                for microphone in microphoneStates {
+                    for modelReady in [false, true] {
+                        let state = PermissionState(services: services(
+                            accessibility: accessibility,
+                            inputMonitoring: inputMonitoring,
+                            microphone: microphone,
+                            modelReady: modelReady
+                        ))
+                        state.refresh()
+                        await state.waitForIdle()
 
-                    XCTAssertEqual(
-                        state.isTextCaptureReady,
-                        accessibility == .granted
-                    )
-                    XCTAssertEqual(
-                        state.isVoiceReady,
-                        accessibility == .granted && microphone == .granted && modelReady
-                    )
-                    state.teardown()
+                        XCTAssertEqual(
+                            state.isTextCaptureReady,
+                            accessibility == .granted
+                        )
+                        XCTAssertEqual(
+                            state.isVoiceReady,
+                            accessibility == .granted
+                                && inputMonitoring == .granted
+                                && microphone == .granted
+                                && modelReady
+                        )
+                        state.teardown()
+                    }
                 }
             }
         }
@@ -166,6 +177,7 @@ final class PermissionStateTests: XCTestCase {
     func testRefreshPublishesAllServiceValues() async {
         let state = PermissionState(services: services(
             accessibility: .notGranted,
+            inputMonitoring: .notGranted,
             microphone: .restricted,
             modelReady: false
         ))
@@ -175,6 +187,7 @@ final class PermissionStateTests: XCTestCase {
         await state.waitForIdle()
 
         XCTAssertEqual(state.accessibility, .notGranted)
+        XCTAssertEqual(state.inputMonitoring, .notGranted)
         XCTAssertEqual(state.microphone, .restricted)
         XCTAssertEqual(state.localVoiceModel, .notDownloaded)
     }
@@ -216,10 +229,12 @@ final class PermissionStateTests: XCTestCase {
         XCTAssertEqual(state.accessibility, .notGranted)
     }
 
-    func testAccessibilityAndMicrophoneRequestsPublishSuccessAndDenial() async {
+    func testPermissionRequestsPublishSuccessAndDenial() async {
         let granted = PermissionState(services: services(
             accessibility: .notGranted,
             requestAccessibility: true,
+            inputMonitoring: .notGranted,
+            requestInputMonitoring: true,
             microphone: .notDetermined,
             requestMicrophone: true
         ))
@@ -227,14 +242,19 @@ final class PermissionStateTests: XCTestCase {
         await granted.waitForIdle()
         granted.requestAccessibility()
         await granted.waitForIdle()
+        granted.requestInputMonitoring()
+        await granted.waitForIdle()
         granted.requestMicrophone()
         await granted.waitForIdle()
         XCTAssertEqual(granted.accessibility, .granted)
+        XCTAssertEqual(granted.inputMonitoring, .granted)
         XCTAssertEqual(granted.microphone, .granted)
 
         let denied = PermissionState(services: services(
             accessibility: .notGranted,
             requestAccessibility: false,
+            inputMonitoring: .notGranted,
+            requestInputMonitoring: false,
             microphone: .notDetermined,
             requestMicrophone: false
         ))
@@ -242,9 +262,12 @@ final class PermissionStateTests: XCTestCase {
         await denied.waitForIdle()
         denied.requestAccessibility()
         await denied.waitForIdle()
+        denied.requestInputMonitoring()
+        await denied.waitForIdle()
         denied.requestMicrophone()
         await denied.waitForIdle()
         XCTAssertEqual(denied.accessibility, .notGranted)
+        XCTAssertEqual(denied.inputMonitoring, .notGranted)
         XCTAssertEqual(denied.microphone, .denied)
     }
 
@@ -520,6 +543,8 @@ final class PermissionStateTests: XCTestCase {
         let state = PermissionState(services: services(
             accessibility: .notGranted,
             requestAccessibility: false,
+            inputMonitoring: .notGranted,
+            requestInputMonitoring: false,
             microphone: .notDetermined,
             modelReady: false
         ))
@@ -527,12 +552,16 @@ final class PermissionStateTests: XCTestCase {
         state.refresh()
         await state.waitForIdle()
         XCTAssertEqual(state.accessibilityAction, .requestAccessibility)
+        XCTAssertEqual(state.inputMonitoringAction, .requestInputMonitoring)
         XCTAssertEqual(state.microphoneAction, .requestMicrophone)
         XCTAssertEqual(state.localVoiceModelAction, .downloadVoiceModel)
 
         state.requestAccessibility()
         await state.waitForIdle()
         XCTAssertEqual(state.accessibilityAction, .showAccessibilityHelper)
+        state.requestInputMonitoring()
+        await state.waitForIdle()
+        XCTAssertEqual(state.inputMonitoringAction, .showInputMonitoringHelper)
 
         let blocked = PermissionState(services: services(
             microphone: .restricted,
@@ -541,6 +570,7 @@ final class PermissionStateTests: XCTestCase {
         blocked.refresh()
         await blocked.waitForIdle()
         XCTAssertNil(blocked.accessibilityAction)
+        XCTAssertNil(blocked.inputMonitoringAction)
         XCTAssertEqual(blocked.microphoneAction, .openMicrophoneSettings)
         XCTAssertNil(blocked.localVoiceModelAction)
     }
@@ -562,6 +592,7 @@ final class PermissionStateTests: XCTestCase {
         XCTAssertFalse(state.isTextCaptureReady)
         state.refresh()
         state.requestAccessibility()
+        state.requestInputMonitoring()
         state.requestMicrophone()
         state.downloadModel()
         await state.waitForIdle()

@@ -20,6 +20,13 @@ enum PermissionCapabilityScope: Equatable {
         }
     }
 
+    var showsInputMonitoring: Bool {
+        switch self {
+        case .setup, .voice: true
+        case .accessibility: false
+        }
+    }
+
     var showsVoiceModel: Bool {
         switch self {
         case .setup, .voice: true
@@ -32,17 +39,20 @@ struct SetupView: View {
     @Bindable var settings: AppSettings
     @Bindable var permissionState: PermissionState
     let onShowAccessibilityHelper: () -> Void
+    let onShowInputMonitoringHelper: () -> Void
     let onComplete: () -> Void
 
     init(
         settings: AppSettings,
         permissionState: PermissionState,
         onShowAccessibilityHelper: @escaping () -> Void,
+        onShowInputMonitoringHelper: @escaping () -> Void,
         onComplete: @escaping () -> Void
     ) {
         _settings = Bindable(wrappedValue: settings)
         _permissionState = Bindable(wrappedValue: permissionState)
         self.onShowAccessibilityHelper = onShowAccessibilityHelper
+        self.onShowInputMonitoringHelper = onShowInputMonitoringHelper
         self.onComplete = onComplete
     }
 
@@ -57,7 +67,7 @@ struct SetupView: View {
                         .accessibilityHidden(true)
                     Text("Set Up Sendpoint")
                         .font(.largeTitle.weight(.semibold))
-                    Text("Select text anywhere, hold \(settings.voiceCaptureCombo.displayString), and say what you think. Sendpoint keeps the passage and your words together in a stack you can copy out as one prompt.")
+                    Text("Select text anywhere, hold \(VoiceModifierShortcut.displayString), and say what you think. Sendpoint keeps the passage and your words together in a stack you can copy out as one prompt.")
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
@@ -66,6 +76,7 @@ struct SetupView: View {
                 PermissionCapabilityList(
                     permissionState: permissionState,
                     onShowAccessibilityHelper: onShowAccessibilityHelper,
+                    onShowInputMonitoringHelper: onShowInputMonitoringHelper,
                     scope: .setup
                 )
 
@@ -119,14 +130,14 @@ struct SetupView: View {
                     icon: "hand.tap.fill",
                     lead: "Hold",
                     sentence: "Speak, then release to save.",
-                    keycap: settings.voiceCaptureCombo.displayString
+                    keycap: VoiceModifierShortcut.displayString
                 )
                 Divider().padding(.leading, 56)
                 howToRow(
                     icon: "hand.point.up.left.fill",
                     lead: "Tap",
                     sentence: "Talk as long as you like, tap again to save.",
-                    keycap: settings.voiceCaptureCombo.displayString
+                    keycap: VoiceModifierShortcut.displayString
                 )
                 Divider().padding(.leading, 56)
                 howToRow(
@@ -202,15 +213,18 @@ private struct SetupIcon: View {
 struct PermissionCapabilityList: View {
     @Bindable var permissionState: PermissionState
     let onShowAccessibilityHelper: () -> Void
+    let onShowInputMonitoringHelper: () -> Void
     let scope: PermissionCapabilityScope
 
     init(
         permissionState: PermissionState,
         onShowAccessibilityHelper: @escaping () -> Void,
+        onShowInputMonitoringHelper: @escaping () -> Void,
         scope: PermissionCapabilityScope = .setup
     ) {
         _permissionState = Bindable(wrappedValue: permissionState)
         self.onShowAccessibilityHelper = onShowAccessibilityHelper
+        self.onShowInputMonitoringHelper = onShowInputMonitoringHelper
         self.scope = scope
     }
 
@@ -231,14 +245,20 @@ struct PermissionCapabilityList: View {
             if scope.showsAccessibility {
                 accessibilityRow
             }
-            if scope.showsMicrophone {
+            if scope.showsInputMonitoring {
                 if scope.showsAccessibility {
+                    Divider().padding(.leading, 46)
+                }
+                inputMonitoringRow
+            }
+            if scope.showsMicrophone {
+                if scope.showsAccessibility || scope.showsInputMonitoring {
                     Divider().padding(.leading, 46)
                 }
                 microphoneRow
             }
             if scope.showsVoiceModel {
-                if scope.showsAccessibility || scope.showsMicrophone {
+                if scope.showsAccessibility || scope.showsInputMonitoring || scope.showsMicrophone {
                     Divider().padding(.leading, 46)
                 }
                 voiceModelRow
@@ -275,6 +295,18 @@ struct PermissionCapabilityList: View {
         )
     }
 
+    private var inputMonitoringRow: some View {
+        CapabilityRow(
+            icon: "keyboard",
+            title: "Input Monitoring",
+            reason: "Lets Sendpoint recognize \(VoiceModifierShortcut.displayString) in any app.",
+            status: inputMonitoringStatus,
+            actionTitle: inputMonitoringActionTitle,
+            showsProgress: permissionState.inputMonitoring == .checking,
+            action: performInputMonitoringAction
+        )
+    }
+
     private var voiceModelRow: some View {
         CapabilityRow(
             icon: "waveform",
@@ -301,6 +333,14 @@ struct PermissionCapabilityList: View {
         case .notDetermined: .neutral("Not enabled")
         case .denied: .attention("Denied")
         case .restricted: .attention("Restricted")
+        case .granted: .ready("Granted")
+        }
+    }
+
+    private var inputMonitoringStatus: CapabilityStatus {
+        switch permissionState.inputMonitoring {
+        case .checking: .neutral("Checking…")
+        case .notGranted: .attention("Required")
         case .granted: .ready("Granted")
         }
     }
@@ -339,6 +379,14 @@ struct PermissionCapabilityList: View {
         }
     }
 
+    private var inputMonitoringActionTitle: String? {
+        switch permissionState.inputMonitoringAction {
+        case .requestInputMonitoring: "Grant Access…"
+        case .showInputMonitoringHelper: "Finish Setup…"
+        default: nil
+        }
+    }
+
     private var voiceModelActionTitle: String? {
         guard permissionState.localVoiceModelAction == .downloadVoiceModel else { return nil }
         if case .failed = permissionState.localVoiceModel { return "Retry Download…" }
@@ -363,6 +411,18 @@ struct PermissionCapabilityList: View {
             permissionState.requestMicrophone()
         case .openMicrophoneSettings:
             permissionState.openMicrophoneSettings()
+        default:
+            break
+        }
+    }
+
+    private func performInputMonitoringAction() {
+        switch permissionState.inputMonitoringAction {
+        case .requestInputMonitoring:
+            permissionState.requestInputMonitoring()
+            onShowInputMonitoringHelper()
+        case .showInputMonitoringHelper:
+            onShowInputMonitoringHelper()
         default:
             break
         }
@@ -463,6 +523,7 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
         settings: AppSettings,
         permissionState: PermissionState,
         onShowAccessibilityHelper: @escaping () -> Void,
+        onShowInputMonitoringHelper: @escaping () -> Void,
         onComplete: @escaping () -> Void
     ) {
         let window = NSWindow(
@@ -477,6 +538,7 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
             settings: settings,
             permissionState: permissionState,
             onShowAccessibilityHelper: onShowAccessibilityHelper,
+            onShowInputMonitoringHelper: onShowInputMonitoringHelper,
             onComplete: onComplete
         ))
         window.setContentSize(window.contentView?.fittingSize ?? NSSize(width: 640, height: 600))
@@ -508,8 +570,49 @@ final class SetupWindowController: NSObject, NSWindowDelegate {
     }
 }
 
-private struct AccessibilityHelperView: View {
+enum PermissionHelperKind {
+    case accessibility
+    case inputMonitoring
+
+    var name: String {
+        switch self {
+        case .accessibility: "Accessibility"
+        case .inputMonitoring: "Input Monitoring"
+        }
+    }
+
+    var settingsPath: String {
+        "Privacy & Security → \(name)"
+    }
+
+    @MainActor
+    func isGranted(in state: PermissionState) -> Bool {
+        switch self {
+        case .accessibility: state.accessibility == .granted
+        case .inputMonitoring: state.inputMonitoring == .granted
+        }
+    }
+
+    @MainActor
+    func refresh(_ state: PermissionState) {
+        switch self {
+        case .accessibility: state.refreshAccessibility()
+        case .inputMonitoring: state.refreshInputMonitoring()
+        }
+    }
+
+    @MainActor
+    func openSettings(_ state: PermissionState) {
+        switch self {
+        case .accessibility: state.openAccessibilitySettings()
+        case .inputMonitoring: state.openInputMonitoringSettings()
+        }
+    }
+}
+
+private struct PermissionHelperView: View {
     @Bindable var permissionState: PermissionState
+    let kind: PermissionHelperKind
     let onOpenSettings: () -> Void
     let onClose: () -> Void
 
@@ -524,18 +627,20 @@ private struct AccessibilityHelperView: View {
                     Text("Sendpoint")
                         .font(.title2.weight(.semibold))
                     Label(
-                        permissionState.accessibility == .granted ? "Accessibility granted" : "Accessibility needs a manual grant",
-                        systemImage: permissionState.accessibility == .granted
+                        kind.isGranted(in: permissionState)
+                            ? "\(kind.name) granted"
+                            : "\(kind.name) needs a manual grant",
+                        systemImage: kind.isGranted(in: permissionState)
                             ? "checkmark.circle.fill" : "exclamationmark.circle.fill"
                     )
-                    .foregroundStyle(permissionState.accessibility == .granted ? .green : .orange)
+                    .foregroundStyle(kind.isGranted(in: permissionState) ? .green : .orange)
                 }
             }
 
             VStack(alignment: .leading, spacing: 10) {
                 Text("Finish in System Settings")
                     .font(.headline)
-                Text("1. Open Privacy & Security → Accessibility.")
+                Text("1. Open \(kind.settingsPath).")
                 Text("2. Turn on Sendpoint in the app list.")
                 Text("3. Return here. This window closes when access is granted.")
             }
@@ -543,7 +648,7 @@ private struct AccessibilityHelperView: View {
             HStack {
                 Button("Close", action: onClose)
                 Spacer()
-                Button("Open Accessibility Settings…", action: onOpenSettings)
+                Button("Open \(kind.name) Settings…", action: onOpenSettings)
                     .buttonStyle(.borderedProminent)
             }
         }
@@ -553,7 +658,7 @@ private struct AccessibilityHelperView: View {
 }
 
 @MainActor
-final class AccessibilityHelperWindowController: NSObject, NSWindowDelegate {
+final class PermissionHelperWindowController: NSObject, NSWindowDelegate {
     private enum Lifecycle {
         case hidden
         case visible
@@ -561,26 +666,30 @@ final class AccessibilityHelperWindowController: NSObject, NSWindowDelegate {
     }
 
     private let permissionState: PermissionState
+    private let kind: PermissionHelperKind
     private let window: NSWindow
     private var lifecycle: Lifecycle = .hidden
     private var pollingTask: Task<Void, Never>?
 
-    init(permissionState: PermissionState) {
+    init(permissionState: PermissionState, kind: PermissionHelperKind) {
         self.permissionState = permissionState
+        self.kind = kind
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 470, height: 310),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
         )
-        window.title = "Accessibility Setup"
+        window.title = "\(kind.name) Setup"
         window.isReleasedWhenClosed = false
         self.window = window
         super.init()
-        window.contentView = NSHostingView(rootView: AccessibilityHelperView(
+        window.contentView = NSHostingView(rootView: PermissionHelperView(
             permissionState: permissionState,
+            kind: kind,
             onOpenSettings: { [weak permissionState] in
-                permissionState?.openAccessibilitySettings()
+                guard let permissionState else { return }
+                kind.openSettings(permissionState)
             },
             onClose: { [weak self] in self?.close() }
         ))
@@ -592,7 +701,7 @@ final class AccessibilityHelperWindowController: NSObject, NSWindowDelegate {
     func show() {
         guard lifecycle != .tornDown else { return }
         lifecycle = .visible
-        permissionState.refreshAccessibility()
+        kind.refresh(permissionState)
         startPolling()
         window.center()
         NSApp.activate(ignoringOtherApps: true)
@@ -622,14 +731,14 @@ final class AccessibilityHelperWindowController: NSObject, NSWindowDelegate {
         pollingTask = Task { [weak self] in
             while let self, self.lifecycle == .visible {
                 guard !Task.isCancelled else { return }
-                self.permissionState.refreshAccessibility()
+                self.kind.refresh(self.permissionState)
                 do {
                     try await Task.sleep(for: .milliseconds(700))
                 } catch {
                     return
                 }
                 guard !Task.isCancelled, self.lifecycle == .visible else { return }
-                if self.permissionState.accessibility == .granted {
+                if self.kind.isGranted(in: self.permissionState) {
                     self.close()
                     return
                 }

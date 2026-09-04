@@ -1,3 +1,4 @@
+import ApplicationServices
 import AppKit
 import Carbon.HIToolbox
 import XCTest
@@ -5,33 +6,36 @@ import XCTest
 
 @MainActor
 final class VoiceShortcutSettingsTests: XCTestCase {
-    func testFreshSettingsUseOptionSpaceForVoice() throws {
-        let (defaults, suite) = makeDefaults()
-        defer { defaults.removePersistentDomain(forName: suite) }
-
-        let settings = AppSettings(defaults: defaults)
-
-        XCTAssertEqual(settings.voiceCaptureCombo, .optionSpace)
-    }
-
-    func testStoredVoiceShortcutIsNeverReplacedByTheNewDefault() throws {
-        let (defaults, suite) = makeDefaults()
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let deliberate = KeyCombo(keyCode: UInt16(kVK_ANSI_E), modifiers: [.control, .command])
-        defaults.set(try JSONEncoder().encode(deliberate), forKey: "voiceCaptureCombo")
-
-        let settings = AppSettings(defaults: defaults)
-
-        XCTAssertEqual(settings.voiceCaptureCombo, deliberate)
-    }
-
-    func testVoiceRegistrationResetOnlyFollowsAnActualComboChange() {
-        XCTAssertFalse(AppDelegate.voiceShortcutChanged(from: nil, to: .optionSpace))
-        XCTAssertFalse(AppDelegate.voiceShortcutChanged(from: .optionSpace, to: .optionSpace))
-        XCTAssertTrue(AppDelegate.voiceShortcutChanged(
-            from: .optionSpace,
-            to: KeyCombo(keyCode: UInt16(kVK_ANSI_E), modifiers: [.control, .command])
+    func testFixedVoiceShortcutRequiresExactOptionCommandFlags() {
+        XCTAssertEqual(VoiceModifierShortcut.displayString, "⌥⌘")
+        XCTAssertTrue(VoiceModifierShortcut.isPressed(flags: [.maskAlternate, .maskCommand]))
+        XCTAssertFalse(VoiceModifierShortcut.isPressed(flags: [.maskAlternate]))
+        XCTAssertFalse(VoiceModifierShortcut.isPressed(
+            flags: [.maskAlternate, .maskCommand, .maskShift]
         ))
+    }
+
+    func testStoredKeyBasedVoiceShortcutIsRemoved() throws {
+        let (defaults, suite) = makeDefaults()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let old = KeyCombo(keyCode: UInt16(kVK_Space), modifiers: [.option])
+        defaults.set(try JSONEncoder().encode(old), forKey: "voiceCaptureCombo")
+
+        _ = AppSettings(defaults: defaults)
+
+        XCTAssertNil(defaults.object(forKey: "voiceCaptureCombo"))
+    }
+
+    func testModifierStateEmitsEachEdgeOnceAndResetReportsAnActivePress() {
+        var state = VoiceModifierShortcutState()
+
+        XCTAssertEqual(state.update(isPressed: true), .pressed)
+        XCTAssertNil(state.update(isPressed: true))
+        XCTAssertTrue(state.reset())
+        XCTAssertFalse(state.reset())
+        XCTAssertNil(state.update(isPressed: false))
+        XCTAssertEqual(state.update(isPressed: true), .pressed)
+        XCTAssertEqual(state.update(isPressed: false), .released)
     }
 
     private func makeDefaults() -> (UserDefaults, String) {

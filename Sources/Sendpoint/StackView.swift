@@ -201,7 +201,7 @@ struct StackView: View {
                     .font(.title3.weight(.semibold))
                 HStack(spacing: 5) {
                     Text("Hold")
-                    Keycap(settings.voiceCaptureCombo.displayString, size: 12)
+                    Keycap(VoiceModifierShortcut.displayString, size: 12)
                     Text("to speak and release to save, or tap it once to start and again to save")
                 }
                 HStack(spacing: 5) {

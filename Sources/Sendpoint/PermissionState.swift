@@ -10,6 +10,12 @@ enum AccessibilityPermissionState: Equatable, Sendable {
     case granted
 }
 
+enum InputMonitoringPermissionState: Equatable, Sendable {
+    case checking
+    case notGranted
+    case granted
+}
+
 enum MicrophonePermissionState: Equatable, Sendable {
     case checking
     case notDetermined
@@ -46,6 +52,8 @@ enum VoiceModelDownloadFailure: Equatable, Sendable {
 enum PermissionAction: Equatable, Sendable {
     case requestAccessibility
     case showAccessibilityHelper
+    case requestInputMonitoring
+    case showInputMonitoringHelper
     case requestMicrophone
     case openMicrophoneSettings
     case downloadVoiceModel
@@ -56,6 +64,8 @@ enum PermissionAction: Equatable, Sendable {
 struct PermissionServices: Sendable {
     var accessibilityStatus: @Sendable () async -> AccessibilityPermissionState
     var requestAccessibility: @Sendable () async -> Bool
+    var inputMonitoringStatus: @Sendable () async -> InputMonitoringPermissionState
+    var requestInputMonitoring: @Sendable () async -> Bool
     var microphoneStatus: @Sendable () async -> MicrophonePermissionState
     var requestMicrophone: @Sendable () async -> Bool
     var voiceModelFilesExist: @Sendable () -> Bool
@@ -63,6 +73,7 @@ struct PermissionServices: Sendable {
         _ onProgress: @escaping @Sendable (Double) -> Void
     ) async throws -> Void
     var openAccessibilitySettings: @MainActor @Sendable () -> Void
+    var openInputMonitoringSettings: @MainActor @Sendable () -> Void
     var openMicrophoneSettings: @MainActor @Sendable () -> Void
 
     @MainActor
@@ -74,6 +85,12 @@ struct PermissionServices: Sendable {
             },
             requestAccessibility: {
                 await checks.requestAccessibility()
+            },
+            inputMonitoringStatus: {
+                await checks.inputMonitoringIsGranted() ? .granted : .notGranted
+            },
+            requestInputMonitoring: {
+                await checks.requestInputMonitoring()
             },
             microphoneStatus: {
                 await MainActor.run { PermissionCheck.microphonePermissionState }
@@ -91,6 +108,9 @@ struct PermissionServices: Sendable {
             },
             openAccessibilitySettings: {
                 PermissionCheck.openAccessibilitySettings()
+            },
+            openInputMonitoringSettings: {
+                PermissionCheck.openInputMonitoringSettings()
             },
             openMicrophoneSettings: {
                 PermissionCheck.openMicrophoneSettings()
@@ -112,9 +132,15 @@ final class PermissionState {
     private var lifecycle: Lifecycle = .active
 
     private(set) var accessibility: AccessibilityPermissionState = .checking
+    private(set) var inputMonitoring: InputMonitoringPermissionState = .checking
     private(set) var microphone: MicrophonePermissionState = .checking
     private(set) var localVoiceModel: LocalVoiceModelState
     private(set) var hasRequestedAccessibility = false
+    private(set) var hasRequestedInputMonitoring = false
+
+    /// AppKit uses this direct callback to start or stop the event tap as the
+    /// grant changes. SwiftUI reads the same state through Observation.
+    @ObservationIgnored var onInputMonitoringChanged: ((InputMonitoringPermissionState) -> Void)?
 
     var accessibilityAction: PermissionAction? {
         switch accessibility {
@@ -136,6 +162,17 @@ final class PermissionState {
         }
     }
 
+    var inputMonitoringAction: PermissionAction? {
+        switch inputMonitoring {
+        case .checking, .granted:
+            return nil
+        case .notGranted:
+            return hasRequestedInputMonitoring
+                ? .showInputMonitoringHelper
+                : .requestInputMonitoring
+        }
+    }
+
     var localVoiceModelAction: PermissionAction? {
         switch localVoiceModel {
         case .downloading, .ready:
@@ -150,12 +187,17 @@ final class PermissionState {
     }
 
     var isVoiceReady: Bool {
-        isTextCaptureReady && microphone == .granted && localVoiceModel == .ready
+        isTextCaptureReady
+            && inputMonitoring == .granted
+            && microphone == .granted
+            && localVoiceModel == .ready
     }
 
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
     @ObservationIgnored private var accessibilityRefreshTask: Task<Void, Never>?
     @ObservationIgnored private var accessibilityRequestTask: Task<Void, Never>?
+    @ObservationIgnored private var inputMonitoringRefreshTask: Task<Void, Never>?
+    @ObservationIgnored private var inputMonitoringRequestTask: Task<Void, Never>?
     @ObservationIgnored private var microphoneRequestTask: Task<Void, Never>?
     @ObservationIgnored private var modelDownloadTask: Task<Void, Never>?
     @ObservationIgnored private var modelProgressTask: Task<Void, Never>?
@@ -163,6 +205,7 @@ final class PermissionState {
 
     @ObservationIgnored private var refreshGeneration = 0
     @ObservationIgnored private var accessibilityGeneration = 0
+    @ObservationIgnored private var inputMonitoringGeneration = 0
     @ObservationIgnored private var microphoneGeneration = 0
     @ObservationIgnored private var modelGeneration = 0
 
@@ -193,6 +236,9 @@ final class PermissionState {
         let accessibilityID = accessibilityGeneration
         let appliesAccessibility = accessibilityRefreshTask == nil
             && accessibilityRequestTask == nil
+        let inputMonitoringID = inputMonitoringGeneration
+        let appliesInputMonitoring = inputMonitoringRefreshTask == nil
+            && inputMonitoringRequestTask == nil
         let microphoneID = microphoneGeneration
         let appliesMicrophone = microphoneRequestTask == nil
         let services = services
@@ -206,18 +252,22 @@ final class PermissionState {
         refreshTask = Task { [weak self, services] in
             guard !Task.isCancelled else { return }
             async let accessibility = services.accessibilityStatus()
+            async let inputMonitoring = services.inputMonitoringStatus()
             async let microphone = services.microphoneStatus()
 
-            let result = await (accessibility, microphone)
+            let result = await (accessibility, inputMonitoring, microphone)
             guard !Task.isCancelled else { return }
             self?.finishRefresh(
                 refreshID: refreshID,
                 accessibilityID: accessibilityID,
                 appliesAccessibility: appliesAccessibility,
+                inputMonitoringID: inputMonitoringID,
+                appliesInputMonitoring: appliesInputMonitoring,
                 microphoneID: microphoneID,
                 appliesMicrophone: appliesMicrophone,
                 accessibility: result.0,
-                microphone: result.1
+                inputMonitoring: result.1,
+                microphone: result.2
             )
         }
     }
@@ -303,6 +353,45 @@ final class PermissionState {
         }
     }
 
+    func refreshInputMonitoring() {
+        guard lifecycle == .active,
+              inputMonitoringRefreshTask == nil,
+              inputMonitoringRequestTask == nil
+        else { return }
+
+        inputMonitoringGeneration += 1
+        let generation = inputMonitoringGeneration
+        let services = services
+        inputMonitoringRefreshTask = Task { [weak self, services] in
+            guard !Task.isCancelled else { return }
+            let status = await services.inputMonitoringStatus()
+            guard !Task.isCancelled else { return }
+            self?.finishInputMonitoringRefresh(generation: generation, status: status)
+        }
+    }
+
+    func requestInputMonitoring() {
+        guard lifecycle == .active,
+              inputMonitoring == .notGranted,
+              !hasRequestedInputMonitoring
+        else { return }
+        inputMonitoringRefreshTask?.cancel()
+        inputMonitoringRefreshTask = nil
+        inputMonitoringRequestTask?.cancel()
+        hasRequestedInputMonitoring = true
+        inputMonitoringGeneration += 1
+        let generation = inputMonitoringGeneration
+        let services = services
+        setInputMonitoring(.checking)
+
+        inputMonitoringRequestTask = Task { [weak self, services] in
+            guard !Task.isCancelled else { return }
+            let granted = await services.requestInputMonitoring()
+            guard !Task.isCancelled else { return }
+            self?.finishInputMonitoringRequest(generation: generation, granted: granted)
+        }
+    }
+
     func requestMicrophone() {
         guard lifecycle == .active, microphone == .notDetermined else { return }
         microphoneRequestTask?.cancel()
@@ -372,6 +461,11 @@ final class PermissionState {
         services.openMicrophoneSettings()
     }
 
+    func openInputMonitoringSettings() {
+        guard lifecycle == .active else { return }
+        services.openInputMonitoringSettings()
+    }
+
     /// Test and lifecycle support. It waits only for work owned at each pass.
     func waitForIdle() async {
         while lifecycle == .active {
@@ -379,6 +473,8 @@ final class PermissionState {
                 refreshTask,
                 accessibilityRefreshTask,
                 accessibilityRequestTask,
+                inputMonitoringRefreshTask,
+                inputMonitoringRequestTask,
                 microphoneRequestTask,
                 modelDownloadTask,
                 modelProgressTask,
@@ -394,12 +490,15 @@ final class PermissionState {
         lifecycle = .tornDown
         refreshGeneration += 1
         accessibilityGeneration += 1
+        inputMonitoringGeneration += 1
         microphoneGeneration += 1
         modelGeneration += 1
 
         refreshTask?.cancel()
         accessibilityRefreshTask?.cancel()
         accessibilityRequestTask?.cancel()
+        inputMonitoringRefreshTask?.cancel()
+        inputMonitoringRequestTask?.cancel()
         microphoneRequestTask?.cancel()
         modelDownloadTask?.cancel()
         modelProgressTask?.cancel()
@@ -410,24 +509,33 @@ final class PermissionState {
         refreshTask = nil
         accessibilityRefreshTask = nil
         accessibilityRequestTask = nil
+        inputMonitoringRefreshTask = nil
+        inputMonitoringRequestTask = nil
         microphoneRequestTask = nil
         modelDownloadTask = nil
         modelProgressTask = nil
+        onInputMonitoringChanged = nil
     }
 
     private func finishRefresh(
         refreshID: Int,
         accessibilityID: Int,
         appliesAccessibility: Bool,
+        inputMonitoringID: Int,
+        appliesInputMonitoring: Bool,
         microphoneID: Int,
         appliesMicrophone: Bool,
         accessibility: AccessibilityPermissionState,
+        inputMonitoring: InputMonitoringPermissionState,
         microphone: MicrophonePermissionState
     ) {
         guard lifecycle == .active, refreshGeneration == refreshID else { return }
         refreshTask = nil
         if appliesAccessibility, accessibilityGeneration == accessibilityID {
             self.accessibility = accessibility
+        }
+        if appliesInputMonitoring, inputMonitoringGeneration == inputMonitoringID {
+            setInputMonitoring(inputMonitoring)
         }
         if appliesMicrophone, microphoneGeneration == microphoneID {
             self.microphone = microphone
@@ -451,11 +559,34 @@ final class PermissionState {
         accessibility = granted ? .granted : .notGranted
     }
 
+    private func finishInputMonitoringRefresh(
+        generation: Int,
+        status: InputMonitoringPermissionState
+    ) {
+        guard lifecycle == .active, inputMonitoringGeneration == generation else { return }
+        inputMonitoringGeneration += 1
+        inputMonitoringRefreshTask = nil
+        setInputMonitoring(status)
+    }
+
+    private func finishInputMonitoringRequest(generation: Int, granted: Bool) {
+        guard lifecycle == .active, inputMonitoringGeneration == generation else { return }
+        inputMonitoringGeneration += 1
+        inputMonitoringRequestTask = nil
+        setInputMonitoring(granted ? .granted : .notGranted)
+    }
+
     private func finishMicrophoneRequest(generation: Int, granted: Bool) {
         guard lifecycle == .active, microphoneGeneration == generation else { return }
         microphoneGeneration += 1
         microphoneRequestTask = nil
         microphone = granted ? .granted : .denied
+    }
+
+    private func setInputMonitoring(_ status: InputMonitoringPermissionState) {
+        guard inputMonitoring != status else { return }
+        inputMonitoring = status
+        onInputMonitoringChanged?(status)
     }
 
     private func reportModelDownloadProgress(generation: Int, fraction: Double) {
@@ -493,6 +624,20 @@ private actor PermissionSystemChecks {
         guard !Task.isCancelled else { return false }
         let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
         let granted = AXIsProcessTrustedWithOptions(options)
+        guard !Task.isCancelled else { return false }
+        return granted
+    }
+
+    func inputMonitoringIsGranted() -> Bool {
+        guard !Task.isCancelled else { return false }
+        let granted = CGPreflightListenEventAccess()
+        guard !Task.isCancelled else { return false }
+        return granted
+    }
+
+    func requestInputMonitoring() -> Bool {
+        guard !Task.isCancelled else { return false }
+        let granted = CGRequestListenEventAccess()
         guard !Task.isCancelled else { return false }
         return granted
     }

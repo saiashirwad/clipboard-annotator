@@ -48,6 +48,7 @@ struct SettingsView: View {
     @Bindable var permissionState: PermissionState
     let onSelectProfile: (UUID) -> Void
     let onShowAccessibilityHelper: () -> Void
+    let onShowInputMonitoringHelper: () -> Void
     let onRunSetup: () -> Void
 
     @State private var tab: SettingsTab = .voice
@@ -69,6 +70,7 @@ struct SettingsView: View {
         permissionState: PermissionState,
         onSelectProfile: @escaping (UUID) -> Void,
         onShowAccessibilityHelper: @escaping () -> Void,
+        onShowInputMonitoringHelper: @escaping () -> Void,
         onRunSetup: @escaping () -> Void
     ) {
         _settings = Bindable(wrappedValue: settings)
@@ -76,6 +78,7 @@ struct SettingsView: View {
         _permissionState = Bindable(wrappedValue: permissionState)
         self.onSelectProfile = onSelectProfile
         self.onShowAccessibilityHelper = onShowAccessibilityHelper
+        self.onShowInputMonitoringHelper = onShowInputMonitoringHelper
         self.onRunSetup = onRunSetup
     }
 
@@ -296,11 +299,11 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 8) {
                 SettingsCaption("Voice note")
                 SettingsCard {
-                    shortcutRow(
+                    fixedShortcutRow(
                         icon: "mic.fill",
                         title: "Voice note",
                         detail: "Select text, then use this shortcut to say what you think.",
-                        slot: .voiceCapture
+                        shortcut: VoiceModifierShortcut.displayString
                     )
                 }
             }
@@ -331,6 +334,7 @@ struct SettingsView: View {
                 PermissionCapabilityList(
                     permissionState: permissionState,
                     onShowAccessibilityHelper: onShowAccessibilityHelper,
+                    onShowInputMonitoringHelper: onShowInputMonitoringHelper,
                     scope: .voice
                 )
             }
@@ -339,7 +343,7 @@ struct SettingsView: View {
     }
 
     private var voiceComboDisplay: String {
-        settings.voiceCaptureCombo.displayString
+        VoiceModifierShortcut.displayString
     }
 
     private var shortcutsTab: some View {
@@ -347,11 +351,11 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 8) {
                 SettingsCaption("Making notes")
                 SettingsCard {
-                    shortcutRow(
+                    fixedShortcutRow(
                         icon: "mic.fill",
                         title: "Voice note",
                         detail: "Hold to speak, or tap to start and tap again to save.",
-                        slot: .voiceCapture
+                        shortcut: VoiceModifierShortcut.displayString
                     )
                     Divider().padding(.leading, 56)
                     shortcutRow(
@@ -419,6 +423,28 @@ struct SettingsView: View {
             Spacer(minLength: 12)
             KeyRecorder(combo: shortcutBinding(for: slot))
                 .fixedSize()
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
+
+    private func fixedShortcutRow(
+        icon: String,
+        title: String,
+        detail: String,
+        shortcut: String
+    ) -> some View {
+        HStack(spacing: 14) {
+            SettingsIcon(icon)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.body.weight(.medium))
+                Text(detail)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 12)
+            Keycap(shortcut)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -506,6 +532,7 @@ struct SettingsView: View {
             PermissionCapabilityList(
                 permissionState: permissionState,
                 onShowAccessibilityHelper: onShowAccessibilityHelper,
+                onShowInputMonitoringHelper: onShowInputMonitoringHelper,
                 scope: .accessibility
             )
             SettingsCard {
@@ -517,7 +544,7 @@ struct SettingsView: View {
                 }
             }
             Label {
-                Text("Accessibility lets Sendpoint read the text you select, for both kinds of note. Voice also needs the microphone and a one-time voice-model download; audio never leaves this Mac.")
+                Text("Accessibility lets Sendpoint read the text you select, for both kinds of note. Voice also needs Input Monitoring for \(VoiceModifierShortcut.displayString), the microphone, and a one-time voice-model download; audio never leaves this Mac.")
             } icon: {
                 Image(systemName: "lock.shield")
             }

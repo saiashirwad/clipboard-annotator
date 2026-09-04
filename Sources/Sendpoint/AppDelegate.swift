@@ -9,7 +9,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var stackWindow: NSWindow?
     private var settingsWindow: NSWindow?
     private var setupWindowController: SetupWindowController?
-    private var accessibilityHelperWindowController: AccessibilityHelperWindowController?
+    private var accessibilityHelperWindowController: PermissionHelperWindowController?
+    private var inputMonitoringHelperWindowController: PermissionHelperWindowController?
     private var profileEditor: ProfileEditorState?
     private var quickSwitch: QuickSwitchWindowController?
     private enum StoreState {
@@ -30,13 +31,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let settings: AppSettings
     private let captureController: CaptureController
     private let permissionState: PermissionState
+    private let voiceShortcutMonitor = VoiceModifierShortcutMonitor()
     private var voiceTrigger = VoiceTriggerMachine()
-    private var lastRegisteredVoiceCombo: KeyCombo?
-
-    static func voiceShortcutChanged(from previous: KeyCombo?, to current: KeyCombo) -> Bool {
-        guard let previous else { return false }
-        return previous != current
-    }
 
     override init() {
         let settings = AppSettings.shared
@@ -60,6 +56,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         captureController.onVoiceEscape = { [weak self] in
             self?.handleVoiceTrigger(.escape)
         }
+        voiceShortcutMonitor.onPressed = { [weak self] timestamp in
+            self?.handleVoiceTrigger(.hotKeyPressed(at: timestamp))
+        }
+        voiceShortcutMonitor.onReleased = { [weak self] timestamp in
+            self?.handleVoiceTrigger(.hotKeyReleased(at: timestamp))
+        }
+        voiceShortcutMonitor.onInterrupted = { [weak self] in
+            self?.handleVoiceTrigger(.shortcutConfigurationChanged)
+        }
+        permissionState.onInputMonitoringChanged = { [weak self] status in
+            guard let self else { return }
+            if status == .granted {
+                self.startVoiceShortcut()
+            } else {
+                self.voiceShortcutMonitor.stop()
+            }
+            self.refreshStatusItem()
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -69,6 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings.onHotKeysChanged = { [weak self] in self?.registerHotKeys() }
         settings.onProfilesChanged = { [weak self] in self?.refreshStatusItem() }
         registerHotKeys()
+        startVoiceShortcut()
         permissionState.refresh()
         AutomaticSelectionMonitor.shared.start()
 
@@ -143,6 +158,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidBecomeActive(_ notification: Notification) {
         permissionState.refresh()
+        startVoiceShortcut()
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -162,12 +178,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupWindowController = nil
         accessibilityHelperWindowController?.teardown()
         accessibilityHelperWindowController = nil
+        inputMonitoringHelperWindowController?.teardown()
+        inputMonitoringHelperWindowController = nil
         settingsWindow?.delegate = nil
         settingsWindow?.close()
         settingsWindow = nil
         stackWindow?.delegate = nil
         stackWindow?.close()
         stackWindow = nil
+        voiceShortcutMonitor.teardown()
         captureController.teardown()
         permissionState.teardown()
         AutomaticSelectionMonitor.shared.teardown()
@@ -178,7 +197,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         settings.onHotKeysChanged = nil
         settings.onProfilesChanged = nil
-        for name in ["capture", "voiceCapture", "voiceEscape", "copy", "stack", "switchSession", "clear"] {
+        permissionState.onInputMonitoringChanged = nil
+        for name in ["capture", "voiceEscape", "copy", "stack", "switchSession", "clear"] {
             HotKeyCenter.shared.unregister(name: name)
         }
     }
@@ -268,13 +288,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
 
         let voice = NSMenuItem(
-            title: "Voice Note",
+            title: "Voice Note (\(VoiceModifierShortcut.displayString))",
             action: isStoreAvailable ? #selector(captureVoiceSelection) : nil,
             keyEquivalent: ""
         )
         voice.target = self
-        apply(settings.voiceCaptureCombo, to: voice)
+        voice.toolTip = VoiceModifierShortcut.displayString
         menu.addItem(voice)
+        if permissionState.inputMonitoring == .notGranted {
+            let permission = NSMenuItem(
+                title: "Enable \(VoiceModifierShortcut.displayString) in Input Monitoring…",
+                action: #selector(presentInputMonitoringHelper),
+                keyEquivalent: ""
+            )
+            permission.target = self
+            menu.addItem(permission)
+        }
 
         let capture = NSMenuItem(
             title: "Typed Note",
@@ -459,17 +488,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Hot keys
 
     private func registerHotKeys() {
-        let voiceComboChanged = Self.voiceShortcutChanged(
-            from: lastRegisteredVoiceCombo,
-            to: settings.voiceCaptureCombo
-        )
-        if voiceComboChanged {
-            // Carbon can drop the old key-up while a shortcut is being
-            // replaced. Reset the trigger before installing the new
-            // registration so an old release cannot strand it in comboHeld.
-            handleVoiceTrigger(.shortcutConfigurationChanged)
-        }
-        lastRegisteredVoiceCombo = settings.voiceCaptureCombo
         var issues: [ShortcutRegistrationIssue] = []
 
         func register(
@@ -496,18 +514,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.captureSelection()
             }
         }
-        register(.voiceCapture, combo: settings.voiceCaptureCombo) {
-            HotKeyCenter.shared.registerHold(
-                name: "voiceCapture",
-                combo: settings.voiceCaptureCombo,
-                pressed: { [weak self] in
-                    self?.handleVoiceTrigger(.hotKeyPressed(at: CACurrentMediaTime()))
-                },
-                released: { [weak self] in
-                    self?.handleVoiceTrigger(.hotKeyReleased(at: CACurrentMediaTime()))
-                }
-            )
-        }
         register(.copy, combo: settings.copyCombo) {
             HotKeyCenter.shared.register(name: "copy", combo: settings.copyCombo) { [weak self] in
                 self?.copyMarkdown()
@@ -530,6 +536,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         settings.updateShortcutRegistrationIssues(issues)
         rebuildMenu()
+    }
+
+    private func startVoiceShortcut() {
+        let started = voiceShortcutMonitor.start()
+        Diag.log("voice modifier shortcut \(started ? "ready" : "needs Input Monitoring")")
     }
 
     // MARK: - Actions
@@ -828,10 +839,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 onShowAccessibilityHelper: { [weak self] in
                     self?.presentAccessibilityHelper()
                 },
+                onShowInputMonitoringHelper: { [weak self] in
+                    self?.presentInputMonitoringHelper()
+                },
                 onComplete: { [weak self] in
                     guard let self else { return }
                     self.setupWindowController?.close()
-                    self.flashStatus("\(self.settings.voiceCaptureCombo.displayString): hold to talk, or tap to start and tap again to save · Esc discards")
+                    self.flashStatus("\(VoiceModifierShortcut.displayString): hold to talk, or tap to start and tap again to save · Esc discards")
                 }
             )
         }
@@ -840,11 +854,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func presentAccessibilityHelper() {
         if accessibilityHelperWindowController == nil {
-            accessibilityHelperWindowController = AccessibilityHelperWindowController(
-                permissionState: permissionState
+            accessibilityHelperWindowController = PermissionHelperWindowController(
+                permissionState: permissionState,
+                kind: .accessibility
             )
         }
         accessibilityHelperWindowController?.show()
+    }
+
+    @objc private func presentInputMonitoringHelper() {
+        if inputMonitoringHelperWindowController == nil {
+            inputMonitoringHelperWindowController = PermissionHelperWindowController(
+                permissionState: permissionState,
+                kind: .inputMonitoring
+            )
+        }
+        inputMonitoringHelperWindowController?.show()
     }
 
     @objc private func showSettings() {
@@ -882,6 +907,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onShowAccessibilityHelper: { [weak self] in
                 self?.presentAccessibilityHelper()
             },
+            onShowInputMonitoringHelper: { [weak self] in
+                self?.presentInputMonitoringHelper()
+            },
             onRunSetup: { [weak self] in
                 self?.presentSetup()
             }
@@ -906,6 +934,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsWindow?.orderOut(nil)
         setupWindowController?.close()
         accessibilityHelperWindowController?.close()
+        inputMonitoringHelperWindowController?.close()
         quickSwitch?.close()
     }
 
