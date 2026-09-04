@@ -33,7 +33,8 @@ final class QuickSwitchModel {
     /// Bumped whenever the view should move keyboard focus.
     private(set) var focusRequest: (field: Field, generation: Int) = (.search, 0)
 
-    init(store: AnnotationStore, onSwitch: @escaping (UUID) -> Void, onClose: @escaping () -> Void) {
+    init(store: AnnotationStore, onSwitch: @escaping (UUID) -> Void, onClose: @escaping () -> Void)
+    {
         self.store = store
         self.onSwitch = onSwitch
         self.onClose = onClose
@@ -56,7 +57,11 @@ final class QuickSwitchModel {
     var selectedSessionID: UUID? { state.selectedSessionID }
     var highlightsCreateRow: Bool { state.highlightsCreateRow }
     var canRenameHighlight: Bool { state.selectedSessionID != nil && rename == nil }
-    var canDeleteHighlight: Bool { facts.canDelete && state.selectedSessionID != nil && rename == nil }
+    /// ⌘⌫ deletes a stack only while the search field is empty; with text in
+    /// it, ⌘⌫ keeps its text-editing meaning (delete to start of line).
+    var canDeleteHighlight: Bool {
+        facts.canDelete && state.selectedSessionID != nil && rename == nil && query.isEmpty
+    }
 
     // MARK: - Store changes
 
@@ -84,19 +89,15 @@ final class QuickSwitchModel {
         _ = state.choose(sessionID, from: facts)
     }
 
-    func highlight(_ row: QuickSwitchRow) {
-        state.highlight(row)
-    }
-
     func activateHighlight() {
         if rename != nil {
             commitRename()
             return
         }
         switch state.highlight {
-        case let .session(id):
+        case .session(let id):
             onSwitch(id)
-        case let .create(name):
+        case .create(let name):
             createSession(named: name)
         case nil:
             NSSound.beep()
@@ -115,18 +116,23 @@ final class QuickSwitchModel {
     }
 
     func createFromQuery() {
-        guard let name = listing.creatableName else { NSSound.beep(); return }
+        guard let name = listing.creatableName else {
+            NSSound.beep()
+            return
+        }
         createSession(named: name)
     }
 
     // MARK: - Mutations
 
     func createSession(named draft: String) {
-        guard let name = SessionDialogs.validateForEnqueue(
-            draft,
-            excluding: nil,
-            sessions: store.sessions
-        ) else { return }
+        guard
+            let name = SessionDialogs.validateForEnqueue(
+                draft,
+                excluding: nil,
+                sessions: store.sessions
+            )
+        else { return }
         let session = Session(name: name)
         store.mutate(.createSession(session))
         onSwitch(session.id)
@@ -150,13 +156,13 @@ final class QuickSwitchModel {
         guard let rename else { return }
         let draft = SessionNameDraft(text: rename.text, excludedSessionID: rename.sessionID)
         switch draft.validation(sessions: store.sessions) {
-        case let .valid(name):
+        case .valid(let name):
             self.rename = nil
             requestFocus(.search)
             if name != facts.session(id: rename.sessionID)?.name {
                 store.mutate(.renameSession(sessionID: rename.sessionID, name: name))
             }
-        case let .invalid(problem):
+        case .invalid(let problem):
             self.rename?.problem = problem
             NSSound.beep()
         }
@@ -167,11 +173,13 @@ final class QuickSwitchModel {
             NSSound.beep()
             return
         }
-        guard SessionDialogs.confirmsDelete(
-            sessionID: sessionID,
-            sessions: store.sessions,
-            lastCleared: store.lastCleared
-        ) else { return }
+        guard
+            SessionDialogs.confirmsDelete(
+                sessionID: sessionID,
+                sessions: store.sessions,
+                lastCleared: store.lastCleared
+            )
+        else { return }
         store.mutate(.deleteSession(sessionID: sessionID))
     }
 
@@ -273,15 +281,17 @@ struct QuickSwitchView: View {
                             .id(QuickSwitchRow.create(name))
                     }
                     if rows.isEmpty {
-                        Text("No stacks match “\(model.query.trimmingCharacters(in: .whitespaces))”.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, minHeight: rowHeight)
+                        Text(
+                            "No stacks match “\(model.query.trimmingCharacters(in: .whitespaces))”."
+                        )
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, minHeight: rowHeight)
                     }
                 }
                 .padding(6)
             }
-            .frame(height: listHeight(rowCount: max(rows.count, 1)))
+            .frame(height: listHeight(capacity: listCapacity))
             .onChange(of: model.highlight) {
                 guard let highlight = model.highlight else { return }
                 proxy.scrollTo(highlight, anchor: nil)
@@ -289,19 +299,28 @@ struct QuickSwitchView: View {
         }
     }
 
-    private func listHeight(rowCount: Int) -> CGFloat {
-        let visible = min(rowCount, maxVisibleRows)
-        return CGFloat(visible) * (rowHeight + 2) + 10
+    /// Rows the list must be able to show without scrolling: every stack plus
+    /// the create row. Filtering can only show fewer, so the height stays put
+    /// while typing and changes only when a stack is created or deleted.
+    private var listCapacity: Int {
+        min(model.facts.sessions.count + 1, maxVisibleRows)
+    }
+
+    private func listHeight(capacity: Int) -> CGFloat {
+        CGFloat(capacity) * (rowHeight + 2) + 10
     }
 
     private func sessionRow(_ session: SessionItemFacts) -> some View {
         let isHighlighted = model.highlight == .session(session.id)
         let isRenaming = model.rename?.sessionID == session.id
-        return PaletteRow(isHighlighted: isHighlighted, action: {
-            if isRenaming { return }
-            model.choose(session.id)
-            model.switchToHighlightedSession()
-        }) {
+        return PaletteRow(
+            isHighlighted: isHighlighted,
+            action: {
+                if isRenaming { return }
+                model.choose(session.id)
+                model.switchToHighlightedSession()
+            }
+        ) {
             HStack(spacing: 10) {
                 Image(systemName: session.isCurrent ? "circle.inset.filled" : "circle")
                     .font(.system(size: 11, weight: .semibold))
@@ -315,10 +334,13 @@ struct QuickSwitchView: View {
 
                 if isRenaming {
                     VStack(alignment: .leading, spacing: 2) {
-                        TextField("Stack name", text: Binding(
-                            get: { model.rename?.text ?? "" },
-                            set: { model.updateRenameText($0) }
-                        ))
+                        TextField(
+                            "Stack name",
+                            text: Binding(
+                                get: { model.rename?.text ?? "" },
+                                set: { model.updateRenameText($0) }
+                            )
+                        )
                         .textFieldStyle(.plain)
                         .font(.system(size: 14, weight: .medium))
                         .focused($focus, equals: .rename(session.id))
@@ -344,9 +366,10 @@ struct QuickSwitchView: View {
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(
-                            Capsule().fill(isHighlighted
-                                ? Color.white.opacity(0.22)
-                                : Color.accentColor.opacity(0.14))
+                            Capsule().fill(
+                                isHighlighted
+                                    ? Color.white.opacity(0.22)
+                                    : Color.accentColor.opacity(0.14))
                         )
                         .foregroundStyle(isHighlighted ? Color.white : Color.accentColor)
                 }
@@ -365,7 +388,9 @@ struct QuickSwitchView: View {
 
     private func createRow(_ name: String) -> some View {
         let isHighlighted = model.highlight == .create(name)
-        return PaletteRow(isHighlighted: isHighlighted, action: { model.createSession(named: name) }) {
+        return PaletteRow(
+            isHighlighted: isHighlighted, action: { model.createSession(named: name) }
+        ) {
             HStack(spacing: 10) {
                 Image(systemName: "plus")
                     .font(.system(size: 11, weight: .bold))
@@ -405,11 +430,11 @@ struct QuickSwitchView: View {
         HStack(spacing: 14) {
             ShortcutHint(keys: "↑↓", label: "Move")
             ShortcutHint(keys: "↩", label: model.highlightsCreateRow ? "Create" : "Switch")
-            if model.selectedSessionID != nil {
+            if model.canRenameHighlight {
                 ShortcutHint(keys: "⌘R", label: "Rename")
-                if model.facts.canDelete {
-                    ShortcutHint(keys: "⌘⌫", label: "Delete")
-                }
+            }
+            if model.canDeleteHighlight {
+                ShortcutHint(keys: "⌘⌫", label: "Delete")
             }
             Spacer()
             ShortcutHint(keys: "esc", label: "Close")
@@ -437,16 +462,17 @@ private struct PaletteRow<Content: View>: View {
         .buttonStyle(.plain)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(isHighlighted
-                    ? Color.accentColor
-                    : Color.primary.opacity(hovering ? 0.05 : 0))
+                .fill(
+                    isHighlighted
+                        ? Color.accentColor
+                        : Color.primary.opacity(hovering ? 0.05 : 0))
         )
         .onHover { hovering = $0 }
     }
 }
 
 /// Owns the palette panel, its key handling, its one teardown path, and the
-/// resize that keeps the top edge still while the row list grows and shrinks.
+/// resize that keeps the top edge still when the row list changes capacity.
 @MainActor
 final class QuickSwitchWindowController: NSObject, NSWindowDelegate {
     private enum Lifecycle {
@@ -496,19 +522,21 @@ final class QuickSwitchWindowController: NSObject, NSWindowDelegate {
         super.init()
         closeHandler = { [weak self] in self?.close() }
 
-        let hosting = NSHostingView(rootView: QuickSwitchView(model: model).background(
-            GeometryReader { proxy in
-                Color.clear.preference(key: HeightKey.self, value: proxy.size.height)
-            }
-        ).onPreferenceChange(HeightKey.self) { [weak self] height in
-            self?.fit(height: height)
-        })
-        // The controller sizes the panel itself; do not let the hosting view
-        // pin the window to a minimum measured before the list settled.
+        let hosting = NSHostingView(
+            rootView: QuickSwitchView(model: model).background(
+                GeometryReader { proxy in
+                    Color.clear.preference(key: HeightKey.self, value: proxy.size.height)
+                }
+            ).onPreferenceChange(HeightKey.self) { [weak self] height in
+                self?.fit(height: height)
+            })
+        // fittingSize is zero unless the hosting view reports an intrinsic
+        // size, so measure with it on, then clear it: from here on only
+        // fit(height:) resizes the panel, and the hosting view must not pin
+        // the window to a size measured before the list settled.
         hosting.sizingOptions = [.intrinsicContentSize]
         panel.contentView = hosting
         panel.setContentSize(hosting.fittingSize)
-        // From here on only fit(height:) resizes the panel.
         hosting.sizingOptions = []
         panel.delegate = self
         installKeyMonitor()
@@ -550,30 +578,41 @@ final class QuickSwitchWindowController: NSObject, NSWindowDelegate {
     // MARK: - Keys
 
     /// Every key the palette cares about is handled here, ahead of the text
-    /// field, so ↑↓ move the highlight instead of the insertion point.
+    /// field, so ↑↓ move the highlight instead of the insertion point. Any
+    /// key not claimed falls through to the field, and ⌘⌫ is only claimed
+    /// while deleting a stack is actually possible, so it otherwise keeps its
+    /// delete-to-start-of-line meaning.
     private func installKeyMonitor() {
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self, self.lifecycle == .active, event.window === self.panel else { return event }
-            let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-            let command = modifiers == .command
-            switch event.keyCode {
-            case 126: // up
-                self.model.moveHighlight(by: -1)
-            case 125: // down
-                self.model.moveHighlight(by: 1)
-            case 36, 76: // return, keypad enter
-                if command { self.model.createFromQuery() } else { self.model.activateHighlight() }
-            case 53: // escape
-                self.model.escape()
-            case 15 where command: // ⌘R
-                self.model.beginRename()
-            case 51 where command: // ⌘⌫
-                self.model.deleteHighlightedSession()
-            default:
+            guard let self, self.lifecycle == .active, event.window === self.panel else {
                 return event
             }
-            return nil
+            let handled = self.handle(PaletteKey(event: event))
+            return handled ? nil : event
         }
+    }
+
+    private func handle(_ key: PaletteKey?) -> Bool {
+        switch key {
+        case .up:
+            model.moveHighlight(by: -1)
+        case .down:
+            model.moveHighlight(by: 1)
+        case .activate:
+            model.activateHighlight()
+        case .create:
+            model.createFromQuery()
+        case .escape:
+            model.escape()
+        case .rename:
+            model.beginRename()
+        case .delete:
+            guard model.canDeleteHighlight else { return false }
+            model.deleteHighlightedSession()
+        case nil:
+            return false
+        }
+        return true
     }
 
     // MARK: - Placement
@@ -582,10 +621,11 @@ final class QuickSwitchWindowController: NSObject, NSWindowDelegate {
         guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
         let visible = screen.visibleFrame
         let size = panel.frame.size
-        panel.setFrameOrigin(NSPoint(
-            x: visible.midX - size.width / 2,
-            y: visible.maxY - visible.height * 0.28 - size.height
-        ))
+        panel.setFrameOrigin(
+            NSPoint(
+                x: visible.midX - size.width / 2,
+                y: visible.maxY - visible.height * 0.28 - size.height
+            ))
     }
 
     private func fit(height: CGFloat) {
@@ -599,16 +639,33 @@ final class QuickSwitchWindowController: NSObject, NSWindowDelegate {
             width: frame.width,
             height: height
         )
-        guard panel.isVisible else {
-            panel.setFrame(target, display: true)
-            return
-        }
-        // Animate through the animator proxy; the synchronous form blocks
-        // the main thread for the whole animation on every keystroke.
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.12
-            context.allowsImplicitAnimation = true
-            panel.animator().setFrame(target, display: true)
+        // Snap rather than animate: SwiftUI has already laid the content out
+        // at the new height, so an animated frame only shows a mismatch.
+        panel.setFrame(target, display: true)
+    }
+}
+
+/// The keys the palette claims, decoded from an event by character rather
+/// than hardware key code so ⌘R survives non-US keyboard layouts.
+private enum PaletteKey {
+    case up, down, activate, create, escape, rename, delete
+
+    init?(event: NSEvent) {
+        let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        let plain = modifiers.isEmpty
+        let command = modifiers == .command
+        switch event.keyCode {
+        case 126 where plain: self = .up
+        case 125 where plain: self = .down
+        case 36 where plain, 76 where plain: self = .activate
+        case 36 where command, 76 where command: self = .create
+        case 53 where plain: self = .escape
+        case 51 where command: self = .delete
+        default:
+            guard command, event.charactersIgnoringModifiers?.lowercased() == "r" else {
+                return nil
+            }
+            self = .rename
         }
     }
 }
