@@ -9,16 +9,18 @@ final class ProfileSettingsTests: XCTestCase {
         XCTAssertEqual(StackExportMode(pasteDirectly: true).shortcutTitle, "Paste stack as Markdown")
         XCTAssertEqual(
             StackExportMode(pasteDirectly: true).shortcutDetail,
-            "Sendpoint shapes the stack with the active template, then pastes it into the app you are using."
+            "Formats the stack with the active template and pastes it where your cursor is."
         )
-        XCTAssertEqual(StackExportMode(pasteDirectly: true).clearAfterTitle, "Clear the stack after pasting")
+        XCTAssertEqual(StackExportMode(pasteDirectly: true).exportMomentCaption, "When you paste")
+        XCTAssertEqual(StackExportMode(pasteDirectly: true).verb, "paste")
 
         XCTAssertEqual(StackExportMode(pasteDirectly: false).shortcutTitle, "Copy stack as Markdown")
         XCTAssertEqual(
             StackExportMode(pasteDirectly: false).shortcutDetail,
-            "Sendpoint shapes the stack with the active template, then copies it to the clipboard."
+            "Formats the stack with the active template and copies it to the clipboard."
         )
-        XCTAssertEqual(StackExportMode(pasteDirectly: false).clearAfterTitle, "Clear the stack after copying")
+        XCTAssertEqual(StackExportMode(pasteDirectly: false).exportMomentCaption, "When you copy")
+        XCTAssertEqual(StackExportMode(pasteDirectly: false).verb, "copy")
     }
 
     func testMissingEmptyAndInvalidProfileDataFallBackToBuiltInsAndCoherent() throws {

@@ -153,7 +153,7 @@ struct SettingsView: View {
                     }
                 }
             }
-            Text("The active template shapes the Markdown when you export a stack.")
+            Text("A template wraps your notes when you \(settings.stackExportMode.verb) a stack.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -165,49 +165,53 @@ struct SettingsView: View {
                 profileTitleActions
             }
 
-            VStack(alignment: .leading, spacing: 8) {
-                SettingsCaption("Instructions for the AI")
-                TextEditor(text: $profileEditor.draft.preamble)
-                    .font(.body)
-                    .lineSpacing(2)
-                    .scrollContentBackground(.hidden)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 8)
-                    .frame(minHeight: 140, maxHeight: 140)
-                    .background(
-                        RoundedRectangle(cornerRadius: SettingsMetrics.cardRadius, style: .continuous)
-                            .fill(Color(nsColor: .textBackgroundColor))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: SettingsMetrics.cardRadius, style: .continuous)
-                            .strokeBorder(Color.primary.opacity(0.1), lineWidth: 1)
-                    )
-                    .accessibilityLabel("Template instructions")
-                Text("Goes above your notes when you export them. Tell the AI what to do with them.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            SettingsSection("Prompt") {
+                ZStack(alignment: .topLeading) {
+                    TextEditor(text: $profileEditor.draft.preamble)
+                        .font(.body)
+                        .lineSpacing(2)
+                        .scrollContentBackground(.hidden)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 8)
+                        .frame(minHeight: 140, maxHeight: 140)
+                        .accessibilityLabel("Prompt")
+                    if profileEditor.draft.preamble.isEmpty {
+                        Text("Tell the AI what to do with the notes below.")
+                            .font(.body)
+                            .foregroundStyle(.tertiary)
+                            .padding(.horizontal, 13)
+                            .padding(.vertical, 8)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .background(
+                    RoundedRectangle(cornerRadius: SettingsMetrics.cardRadius, style: .continuous)
+                        .fill(Color(nsColor: .textBackgroundColor))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: SettingsMetrics.cardRadius, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.1), lineWidth: 1)
+                )
             }
 
-            SettingsSection("Include with each note") {
+            SettingsSection("Under each note") {
                 SettingsCard {
-                    SettingsToggleRow("Date heading", isOn: $profileEditor.draft.includeHeading)
-                    SettingsDivider(pastIcon: false)
                     SettingsToggleRow("Application", isOn: $profileEditor.draft.includeApplication)
                     SettingsDivider(pastIcon: false)
                     SettingsToggleRow("Window title", isOn: $profileEditor.draft.includeWindow)
                     SettingsDivider(pastIcon: false)
                     SettingsToggleRow("Link or working directory", isOn: $profileEditor.draft.includeLink)
                     SettingsDivider(pastIcon: false)
-                    SettingsToggleRow("Timestamps", isOn: $profileEditor.draft.includeTimestamps)
+                    SettingsToggleRow("Time", isOn: $profileEditor.draft.includeTimestamps)
                 }
             }
 
-            SettingsCard {
-                SettingsToggleRow(
-                    settings.stackExportMode.clearAfterTitle,
-                    subtitle: "Start fresh once the notes have left the app.",
-                    isOn: $profileEditor.draft.clearSessionAfterExport
-                )
+            SettingsSection(settings.stackExportMode.exportMomentCaption) {
+                SettingsCard {
+                    SettingsToggleRow("Date heading at the top", isOn: $profileEditor.draft.includeHeading)
+                    SettingsDivider(pastIcon: false)
+                    SettingsToggleRow("Clear the stack afterwards", isOn: $profileEditor.draft.clearSessionAfterExport)
+                }
             }
         }
         .animation(.snappy(duration: 0.22), value: profileEditor.isDirty)
@@ -297,16 +301,27 @@ struct SettingsView: View {
                     HowToRow(icon: "escape", lead: "Esc", sentence: "Discard the recording.")
                 }
             }
-            SettingsSection("Needed for voice") {
-                PermissionCapabilityList(
-                    permissionState: permissionState,
-                    onShowAccessibilityHelper: onShowAccessibilityHelper,
-                    onShowInputMonitoringHelper: onShowInputMonitoringHelper,
-                    scope: .voice
-                )
+            if !permissionState.isVoiceReady {
+                voiceNeedsAttention
             }
             shortcutFeedbackView
         }
+        .task { await permissionState.watchVoiceModel() }
+    }
+
+    /// Shown only while something voice depends on is missing; the
+    /// details live on the Permissions tab.
+    private var voiceNeedsAttention: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "exclamationmark.circle.fill")
+                .foregroundStyle(.orange)
+            Text("Voice needs a permission.")
+            Button("Open Permissions") { tab = .permissions }
+                .buttonStyle(.link)
+        }
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .padding(.leading, 2)
     }
 
     private var shortcutsTab: some View {
@@ -435,6 +450,14 @@ struct SettingsView: View {
                     onShowAccessibilityHelper: onShowAccessibilityHelper,
                     onShowInputMonitoringHelper: onShowInputMonitoringHelper,
                     scope: .accessibility
+                )
+            }
+            SettingsSection("Needed for voice") {
+                PermissionCapabilityList(
+                    permissionState: permissionState,
+                    onShowAccessibilityHelper: onShowAccessibilityHelper,
+                    onShowInputMonitoringHelper: onShowInputMonitoringHelper,
+                    scope: .voice
                 )
             }
             SettingsSection("Setup") {

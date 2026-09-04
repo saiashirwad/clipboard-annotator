@@ -21,15 +21,23 @@ enum StackExportMode: Equatable, Sendable {
 
     var shortcutDetail: String {
         switch self {
-        case .paste: "Sendpoint shapes the stack with the active template, then pastes it into the app you are using."
-        case .copy: "Sendpoint shapes the stack with the active template, then copies it to the clipboard."
+        case .paste: "Formats the stack with the active template and pastes it where your cursor is."
+        case .copy: "Formats the stack with the active template and copies it to the clipboard."
         }
     }
 
-    var clearAfterTitle: String {
+    /// Caption over the template options that apply once per export.
+    var exportMomentCaption: String {
         switch self {
-        case .paste: "Clear the stack after pasting"
-        case .copy: "Clear the stack after copying"
+        case .paste: "When you paste"
+        case .copy: "When you copy"
+        }
+    }
+
+    var verb: String {
+        switch self {
+        case .paste: "paste"
+        case .copy: "copy"
         }
     }
 }
