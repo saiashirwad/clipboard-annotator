@@ -1,3 +1,5 @@
+import AudioToolbox
+import AVFoundation
 import CoreAudio
 import Foundation
 import Observation
@@ -47,6 +49,26 @@ enum AudioInputDeviceQuery {
 
     static func device(forUID uid: String) -> AudioInputDevice? {
         allInputs().first { $0.uid == uid }
+    }
+
+    /// Points an engine's input unit at `device`. Must run before anything
+    /// reads the node's format, and before the engine starts.
+    @discardableResult
+    static func select(_ device: AudioInputDevice, on input: AVAudioInputNode) -> Bool {
+        guard let unit = input.audioUnit else { return false }
+        var id = device.id
+        let status = AudioUnitSetProperty(
+            unit,
+            kAudioOutputUnitProperty_CurrentDevice,
+            kAudioUnitScope_Global,
+            0,
+            &id,
+            UInt32(MemoryLayout<AudioDeviceID>.size)
+        )
+        if status != noErr {
+            Diag.log("input device selection failed (\(status)) for \(device.name)")
+        }
+        return status == noErr
     }
 
     // MARK: - Plumbing

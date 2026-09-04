@@ -1,4 +1,3 @@
-import AudioToolbox
 import AVFoundation
 import FluidAudio
 import Foundation
@@ -120,20 +119,9 @@ final class VoiceAnnotationService {
         guard let device = InputDeviceChoice.resolve(
             preferredUID: preferredInputDeviceUID,
             available: AudioInputDeviceQuery.allInputs()
-        ), let unit = input.audioUnit else { return }
-        var id = device.id
-        let status = AudioUnitSetProperty(
-            unit,
-            kAudioOutputUnitProperty_CurrentDevice,
-            kAudioUnitScope_Global,
-            0,
-            &id,
-            UInt32(MemoryLayout<AudioDeviceID>.size)
-        )
-        if status == noErr {
+        ) else { return }
+        if AudioInputDeviceQuery.select(device, on: input) {
             Diag.log("voice input device: \(device.name)")
-        } else {
-            Diag.log("voice input device selection failed (\(status)); using system default")
         }
     }
 

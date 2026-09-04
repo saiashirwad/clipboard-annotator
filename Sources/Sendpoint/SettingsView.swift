@@ -55,6 +55,8 @@ struct SettingsView: View {
     @State private var newProfile: NewProfileDraft?
     @State private var shortcutFeedback: String?
     @State private var inputDevices = AudioInputDeviceList()
+    @State private var levelMonitor = InputLevelMonitor()
+    @State private var windowIsVisible = false
 
     private struct NewProfileDraft: Equatable {
         var name: String
@@ -129,6 +131,7 @@ struct SettingsView: View {
         )
         .ignoresSafeArea()
         .overlayScrollers()
+        .background(WindowVisibilityReporter(isVisible: $windowIsVisible))
     }
 
     // MARK: - Profiles
@@ -307,6 +310,8 @@ struct SettingsView: View {
             }
             SettingsSection("Microphone") {
                 microphonePicker
+                InputLevelBar(level: levelMonitor.level, isActive: levelMonitor.isRunning)
+                    .padding(.top, 2)
                 Text(microphoneFootnote)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -315,6 +320,17 @@ struct SettingsView: View {
             shortcutFeedbackView
         }
         .task { await permissionState.watchVoiceModel() }
+        .task(id: levelMonitorKey) {
+            guard windowIsVisible else { levelMonitor.stop(); return }
+            levelMonitor.start(preferredUID: settings.inputDeviceUID)
+        }
+        .onDisappear { levelMonitor.stop() }
+    }
+
+    /// Restart the meter when the mic, the window's visibility, or the
+    /// permission changes; stop it whenever the tab is not on screen.
+    private var levelMonitorKey: String {
+        "\(windowIsVisible)|\(settings.inputDeviceUID ?? "default")|\(permissionState.microphone == .granted)"
     }
 
     private var microphoneFootnote: String {
@@ -590,6 +606,87 @@ private struct NewProfilePopover: View {
 
 
 // MARK: - Building blocks
+
+/// The input meter from System Settings: a row of pills that fill from the
+/// left as the microphone gets louder.
+private struct InputLevelBar: View {
+    let level: Float
+    let isActive: Bool
+
+    private let segments = 24
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text("Input level")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize()
+            HStack(spacing: 3) {
+                ForEach(0..<segments, id: \.self) { index in
+                    RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                        .fill(index < litSegments ? Color.green : Color.primary.opacity(0.12))
+                        .frame(height: 8)
+                }
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .padding(.horizontal, 2)
+        .opacity(isActive ? 1 : 0.5)
+        .animation(.linear(duration: 0.05), value: litSegments)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Input level")
+        .accessibilityValue(isActive ? "\(Int(level * 100)) percent" : "Not listening")
+    }
+
+    private var litSegments: Int {
+        guard isActive else { return 0 }
+        return Int((level * Float(segments)).rounded())
+    }
+}
+
+/// Tells SwiftUI whether the window it lives in is actually on screen, so
+/// live work like the level meter stops when the window is hidden.
+private struct WindowVisibilityReporter: NSViewRepresentable {
+    @Binding var isVisible: Bool
+
+    func makeNSView(context: Context) -> ReporterView {
+        let view = ReporterView()
+        view.onChange = { isVisible = $0 }
+        return view
+    }
+
+    func updateNSView(_ nsView: ReporterView, context: Context) {
+        nsView.onChange = { isVisible = $0 }
+    }
+
+    final class ReporterView: NSView {
+        var onChange: ((Bool) -> Void)?
+        private var observers: [NSObjectProtocol] = []
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            observers.forEach(NotificationCenter.default.removeObserver)
+            observers = []
+            guard let window else { report(false); return }
+            observers.append(NotificationCenter.default.addObserver(
+                forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main
+            ) { [weak self] _ in self?.reportCurrent() })
+            observers.append(NotificationCenter.default.addObserver(
+                forName: NSWindow.willCloseNotification, object: window, queue: .main
+            ) { [weak self] _ in self?.report(false) })
+            reportCurrent()
+        }
+
+        private func reportCurrent() {
+            guard let window else { report(false); return }
+            report(window.isVisible && window.occlusionState.contains(.visible))
+        }
+
+        private func report(_ visible: Bool) {
+            DispatchQueue.main.async { [onChange] in onChange?(visible) }
+        }
+    }
+}
 
 /// A native pop-up so it fills the width it is given; SwiftUI's menu picker
 /// sizes itself to its title instead.
