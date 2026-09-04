@@ -4,6 +4,36 @@ import SendpointDomain
 import Observation
 import ServiceManagement
 
+enum StackExportMode: Equatable, Sendable {
+    case paste
+    case copy
+
+    init(pasteDirectly: Bool) {
+        self = pasteDirectly ? .paste : .copy
+    }
+
+    var shortcutTitle: String {
+        switch self {
+        case .paste: "Paste stack as Markdown"
+        case .copy: "Copy stack as Markdown"
+        }
+    }
+
+    var shortcutDetail: String {
+        switch self {
+        case .paste: "Sendpoint shapes the stack with the active template, then pastes it into the app you are using."
+        case .copy: "Sendpoint shapes the stack with the active template, then copies it to the clipboard."
+        }
+    }
+
+    var clearAfterTitle: String {
+        switch self {
+        case .paste: "Clear the stack after pasting"
+        case .copy: "Clear the stack after copying"
+        }
+    }
+}
+
 enum ShortcutSlot: String, CaseIterable, Hashable, Sendable {
     case capture
     case copy
@@ -14,7 +44,7 @@ enum ShortcutSlot: String, CaseIterable, Hashable, Sendable {
     var title: String {
         switch self {
         case .capture: "Typed note"
-        case .copy: "Copy stack as Markdown"
+        case .copy: "Export stack as Markdown"
         case .stack: "Show stack"
         case .switchSession: "Switch stack"
         case .clear: "Clear stack"
@@ -119,6 +149,10 @@ final class AppSettings {
 
     var activeProfile: Profile {
         profiles.first(where: { $0.id == activeProfileID }) ?? profiles[0]
+    }
+
+    var stackExportMode: StackExportMode {
+        StackExportMode(pasteDirectly: pasteDirectly)
     }
 
     var pasteDirectly: Bool { didSet { defaults.set(pasteDirectly, forKey: Key.pasteDirectly); onHotKeysChanged?() } }

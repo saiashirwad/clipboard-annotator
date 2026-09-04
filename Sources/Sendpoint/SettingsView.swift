@@ -172,7 +172,7 @@ struct SettingsView: View {
                     )
                 }
             }
-            Text("The active template shapes the Markdown you copy out of a stack.")
+            Text("The active template shapes the Markdown when you export a stack.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -215,7 +215,7 @@ struct SettingsView: View {
                             .strokeBorder(Color.primary.opacity(0.1), lineWidth: 1)
                     )
                     .accessibilityLabel("Template instructions")
-                Text("Goes above your notes when you copy. Tell the AI what to do with them.")
+                Text("Goes above your notes when you export them. Tell the AI what to do with them.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -237,7 +237,7 @@ struct SettingsView: View {
 
             SettingsCard {
                 SettingsToggleRow(
-                    "Clear the stack after copying or pasting",
+                    settings.stackExportMode.clearAfterTitle,
                     subtitle: "Start fresh once the notes have left the app.",
                     isOn: $profileEditor.draft.clearSessionAfterExport
                 )
@@ -371,8 +371,8 @@ struct SettingsView: View {
                 SettingsCard {
                     shortcutRow(
                         icon: "doc.on.clipboard",
-                        title: "Copy stack as Markdown",
-                        detail: "Everything in the stack, shaped by the active template.",
+                        title: settings.stackExportMode.shortcutTitle,
+                        detail: settings.stackExportMode.shortcutDetail,
                         slot: .copy
                     )
                     Divider().padding(.leading, 56)
@@ -493,7 +493,7 @@ struct SettingsView: View {
     private var captureTab: some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 8) {
-                SettingsCaption("After copying")
+                SettingsCaption("Stack export")
                 SettingsCard {
                     SettingsToggleRow(
                         "Paste straight into the app you are in",

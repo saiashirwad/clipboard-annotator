@@ -5,6 +5,22 @@ import XCTest
 
 @MainActor
 final class ProfileSettingsTests: XCTestCase {
+    func testStackExportCopyMatchesTheVisibleOutcome() {
+        XCTAssertEqual(StackExportMode(pasteDirectly: true).shortcutTitle, "Paste stack as Markdown")
+        XCTAssertEqual(
+            StackExportMode(pasteDirectly: true).shortcutDetail,
+            "Sendpoint shapes the stack with the active template, then pastes it into the app you are using."
+        )
+        XCTAssertEqual(StackExportMode(pasteDirectly: true).clearAfterTitle, "Clear the stack after pasting")
+
+        XCTAssertEqual(StackExportMode(pasteDirectly: false).shortcutTitle, "Copy stack as Markdown")
+        XCTAssertEqual(
+            StackExportMode(pasteDirectly: false).shortcutDetail,
+            "Sendpoint shapes the stack with the active template, then copies it to the clipboard."
+        )
+        XCTAssertEqual(StackExportMode(pasteDirectly: false).clearAfterTitle, "Clear the stack after copying")
+    }
+
     func testMissingEmptyAndInvalidProfileDataFallBackToBuiltInsAndCoherent() throws {
         for seed in [Seed.missing, .empty, .invalidData] {
             let defaults = makeDefaults()
