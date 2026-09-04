@@ -54,6 +54,7 @@ struct SettingsView: View {
     @State private var tab: SettingsTab = .voice
     @State private var newProfile: NewProfileDraft?
     @State private var shortcutFeedback: String?
+    @State private var inputDevices = AudioInputDeviceList()
 
     private struct NewProfileDraft: Equatable {
         var name: String
@@ -304,9 +305,53 @@ struct SettingsView: View {
             if !permissionState.isVoiceReady {
                 voiceNeedsAttention
             }
+            SettingsSection("Microphone") {
+                microphonePicker
+                Text(microphoneFootnote)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             shortcutFeedbackView
         }
         .task { await permissionState.watchVoiceModel() }
+    }
+
+    private var microphoneFootnote: String {
+        if settings.inputDeviceUID != nil, !selectedDeviceIsConnected {
+            return "\(settings.inputDeviceName ?? "That microphone") is not connected. Voice notes use the system default until it returns."
+        }
+        return "The built-in microphone usually sounds better than AirPods, which switch to a low-quality mode while their mic is in use."
+    }
+
+    private var selectedDeviceIsConnected: Bool {
+        guard let uid = settings.inputDeviceUID else { return true }
+        return inputDevices.devices.contains { $0.uid == uid }
+    }
+
+    private var microphonePicker: some View {
+        var items: [InputDevicePopUp.Item] = [.init(uid: nil, title: systemDefaultLabel)]
+        if !inputDevices.devices.isEmpty {
+            items.append(.separator)
+            items += inputDevices.devices.map { .init(uid: $0.uid, title: $0.name) }
+        }
+        if let uid = settings.inputDeviceUID, !selectedDeviceIsConnected {
+            items.append(.separator)
+            items.append(.init(uid: uid, title: "\(settings.inputDeviceName ?? "Saved microphone") (not connected)"))
+        }
+        return InputDevicePopUp(items: items, selectedUID: settings.inputDeviceUID) { uid in
+            let name = inputDevices.devices.first { $0.uid == uid }?.name
+            settings.setInputDevice(uid: uid, name: name)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityLabel("Microphone")
+    }
+
+    private var systemDefaultLabel: String {
+        if let name = inputDevices.systemDefault?.name {
+            return "System default (\(name))"
+        }
+        return "System default"
     }
 
     /// Shown only while something voice depends on is missing; the
@@ -545,6 +590,59 @@ private struct NewProfilePopover: View {
 
 
 // MARK: - Building blocks
+
+/// A native pop-up so it fills the width it is given; SwiftUI's menu picker
+/// sizes itself to its title instead.
+private struct InputDevicePopUp: NSViewRepresentable {
+    struct Item {
+        var uid: String?
+        var title: String
+        var isSeparator = false
+
+        static let separator = Item(uid: nil, title: "", isSeparator: true)
+    }
+
+    let items: [Item]
+    let selectedUID: String?
+    let onSelect: (String?) -> Void
+
+    func makeNSView(context: Context) -> NSPopUpButton {
+        let button = NSPopUpButton(frame: .zero, pullsDown: false)
+        button.target = context.coordinator
+        button.action = #selector(Coordinator.changed(_:))
+        button.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        button.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return button
+    }
+
+    func updateNSView(_ button: NSPopUpButton, context: Context) {
+        context.coordinator.onSelect = onSelect
+        button.removeAllItems()
+        for item in items {
+            if item.isSeparator {
+                button.menu?.addItem(.separator())
+            } else {
+                let menuItem = NSMenuItem(title: item.title, action: nil, keyEquivalent: "")
+                menuItem.representedObject = item.uid
+                button.menu?.addItem(menuItem)
+            }
+        }
+        let index = button.itemArray.firstIndex { ($0.representedObject as? String) == selectedUID && !$0.isSeparatorItem }
+        button.selectItem(at: index ?? 0)
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(onSelect: onSelect) }
+
+    final class Coordinator: NSObject {
+        var onSelect: (String?) -> Void
+
+        init(onSelect: @escaping (String?) -> Void) { self.onSelect = onSelect }
+
+        @objc func changed(_ sender: NSPopUpButton) {
+            onSelect(sender.selectedItem?.representedObject as? String)
+        }
+    }
+}
 
 /// A round, quiet icon button for secondary actions beside a title.
 private struct CircleIconButton: View {

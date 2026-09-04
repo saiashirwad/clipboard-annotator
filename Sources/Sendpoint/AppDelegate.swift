@@ -82,6 +82,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setUpStatusItem()
         settings.onHotKeysChanged = { [weak self] in self?.registerHotKeys() }
         settings.onProfilesChanged = { [weak self] in self?.refreshStatusItem() }
+        settings.onInputDeviceChanged = { [settings] in
+            VoiceAnnotationService.shared.preferredInputDeviceUID = settings.inputDeviceUID
+        }
+        VoiceAnnotationService.shared.preferredInputDeviceUID = settings.inputDeviceUID
         registerHotKeys()
         startVoiceShortcut()
         permissionState.refresh()
@@ -197,6 +201,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         settings.onHotKeysChanged = nil
         settings.onProfilesChanged = nil
+        settings.onInputDeviceChanged = nil
         permissionState.onInputMonitoringChanged = nil
         for name in ["capture", "voiceEscape", "copy", "stack", "switchSession", "clear"] {
             HotKeyCenter.shared.unregister(name: name)

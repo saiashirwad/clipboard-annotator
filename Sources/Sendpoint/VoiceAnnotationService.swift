@@ -1,3 +1,4 @@
+import AudioToolbox
 import AVFoundation
 import FluidAudio
 import Foundation
@@ -27,6 +28,10 @@ final class VoiceAnnotationService {
     private var engine: AVAudioEngine?
     private var recordingFile: AVAudioFile?
     private var recordingURL: URL?
+
+    /// UID of the microphone to record from; `nil` follows the system default.
+    /// If the device is not connected when recording starts, the default is used.
+    var preferredInputDeviceUID: String?
 
     private init() {}
 
@@ -68,6 +73,7 @@ final class VoiceAnnotationService {
 
         let engine = AVAudioEngine()
         let input = engine.inputNode
+        selectInputDevice(on: input)
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else {
             throw VoiceAnnotationError.noInputDevice
@@ -106,6 +112,29 @@ final class VoiceAnnotationService {
         recordingFile = file
         recordingURL = url
         Diag.log("voice recording started")
+    }
+
+    /// Points the input unit at the chosen microphone before the engine
+    /// reads its format. Must run before anything else touches the node.
+    private func selectInputDevice(on input: AVAudioInputNode) {
+        guard let device = InputDeviceChoice.resolve(
+            preferredUID: preferredInputDeviceUID,
+            available: AudioInputDeviceQuery.allInputs()
+        ), let unit = input.audioUnit else { return }
+        var id = device.id
+        let status = AudioUnitSetProperty(
+            unit,
+            kAudioOutputUnitProperty_CurrentDevice,
+            kAudioUnitScope_Global,
+            0,
+            &id,
+            UInt32(MemoryLayout<AudioDeviceID>.size)
+        )
+        if status == noErr {
+            Diag.log("voice input device: \(device.name)")
+        } else {
+            Diag.log("voice input device selection failed (\(status)); using system default")
+        }
     }
 
     /// Stops the microphone before starting transcription, so its use stays

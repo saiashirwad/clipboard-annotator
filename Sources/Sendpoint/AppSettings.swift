@@ -140,6 +140,8 @@ final class AppSettings {
         static let pasteDirectly = "pasteDirectly"
         static let restoreFocusAfterSave = "restoreFocusAfterSave"
         static let hasCompletedSetup = "hasCompletedSetup"
+        static let inputDeviceUID = "inputDeviceUID"
+        static let inputDeviceName = "inputDeviceName"
     }
 
     private let defaults: UserDefaults
@@ -165,6 +167,19 @@ final class AppSettings {
 
     var pasteDirectly: Bool { didSet { defaults.set(pasteDirectly, forKey: Key.pasteDirectly); onHotKeysChanged?() } }
     var restoreFocusAfterSave: Bool { didSet { defaults.set(restoreFocusAfterSave, forKey: Key.restoreFocusAfterSave) } }
+
+    /// The microphone voice notes record from. `nil` follows the system default.
+    /// The name is kept so the picker can still show a device that is unplugged.
+    private(set) var inputDeviceUID: String?
+    private(set) var inputDeviceName: String?
+
+    func setInputDevice(uid: String?, name: String?) {
+        inputDeviceUID = uid
+        inputDeviceName = uid == nil ? nil : name
+        defaults.set(inputDeviceUID, forKey: Key.inputDeviceUID)
+        defaults.set(inputDeviceName, forKey: Key.inputDeviceName)
+        onInputDeviceChanged?()
+    }
     private(set) var hasCompletedSetup: Bool
 
     var launchAtLogin: Bool {
@@ -183,6 +198,8 @@ final class AppSettings {
     var onHotKeysChanged: (() -> Void)?
     /// Called after the active profile or stored profiles change.
     var onProfilesChanged: (() -> Void)?
+    /// Called after the preferred microphone changes.
+    var onInputDeviceChanged: (() -> Void)?
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -213,6 +230,9 @@ final class AppSettings {
         pasteDirectly = defaults.object(forKey: Key.pasteDirectly) as? Bool ?? true
         restoreFocusAfterSave = defaults.object(forKey: Key.restoreFocusAfterSave) as? Bool ?? true
         hasCompletedSetup = defaults.object(forKey: Key.hasCompletedSetup) as? Bool ?? false
+        let storedInputUID = defaults.string(forKey: Key.inputDeviceUID)
+        inputDeviceUID = storedInputUID
+        inputDeviceName = storedInputUID == nil ? nil : defaults.string(forKey: Key.inputDeviceName)
         launchAtLogin = SMAppService.mainApp.status == .enabled
         shortcutRegistrationIssues = ShortcutSlot.allCases.compactMap { slot in
             let combo = combo(for: slot)
