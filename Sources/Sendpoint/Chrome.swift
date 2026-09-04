@@ -17,12 +17,18 @@ struct Keycap: View {
             .padding(.horizontal, size * 0.5)
             .padding(.vertical, size * 0.22)
             .background(
+                // A physical key: a lighter face sitting on a darker bottom edge.
                 RoundedRectangle(cornerRadius: size * 0.4, style: .continuous)
-                    .fill(Color.primary.opacity(0.06))
+                    .fill(Color.primary.opacity(0.16))
+                    .offset(y: 1)
+            )
+            .background(
+                RoundedRectangle(cornerRadius: size * 0.4, style: .continuous)
+                    .fill(Color(nsColor: .controlBackgroundColor).opacity(0.7))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: size * 0.4, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.10), lineWidth: 1)
+                    .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
             )
             .foregroundStyle(.secondary)
     }

@@ -59,9 +59,20 @@ final class StackPaletteWindowController: NSObject, NSWindowDelegate {
         super.init()
         closeHandler = { [weak self] in self?.close() }
 
+        // The palette is a sheet of frosted glass over the desktop, so the
+        // window itself is clear and a popover-material view carries the tint.
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        let glass = NSVisualEffectView()
+        glass.material = .popover
+        glass.blendingMode = .behindWindow
+        glass.state = .active
         let hosting = NSHostingView(rootView: StackPaletteView(model: model))
         hosting.sizingOptions = []
-        panel.contentView = hosting
+        hosting.frame = glass.bounds
+        hosting.autoresizingMask = [.width, .height]
+        glass.addSubview(hosting)
+        panel.contentView = glass
         panel.delegate = self
         installKeyMonitor()
     }

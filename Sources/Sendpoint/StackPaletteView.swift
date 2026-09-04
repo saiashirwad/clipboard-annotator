@@ -7,6 +7,7 @@ import SwiftUI
 struct StackPaletteView: View {
     @Bindable var model: StackPaletteModel
     @FocusState private var focus: StackPaletteModel.Field?
+    @Environment(\.colorScheme) private var colorScheme
 
     static let minimumSize = CGSize(width: 780, height: 460)
     private let stackColumnWidth: CGFloat = 300
@@ -29,7 +30,9 @@ struct StackPaletteView: View {
             minWidth: Self.minimumSize.width, maxWidth: .infinity,
             minHeight: Self.minimumSize.height, maxHeight: .infinity
         )
-        .background(.regularMaterial)
+        // The window's material is a frosted popover; in the light appearance
+        // a white wash over it keeps the sheet paper-white instead of grey.
+        .background(Color.white.opacity(colorScheme == .dark ? 0 : 0.78))
         .overlay { overlayMenu }
         .ignoresSafeArea()
         .onAppear {
@@ -234,57 +237,40 @@ struct StackPaletteView: View {
             onActivate: { model.perform(.switchToStack(session.id)) }
         ) {
             HStack(spacing: 10) {
-                Image(systemName: session.isCurrent ? "circle.inset.filled" : "circle")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(
-                        isHighlighted
-                            ? AnyShapeStyle(Color.white.opacity(session.isCurrent ? 1 : 0.6))
-                            : session.isCurrent ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary)
-                    )
-                    .frame(width: 14)
+                // A single dot marks the current stack; everything else stays quiet.
+                Circle()
+                    .fill(Color.accentColor)
+                    .frame(width: 6, height: 6)
+                    .opacity(session.isCurrent ? 1 : 0)
+                    .frame(width: 10)
                     .accessibilityHidden(true)
 
                 if isRenaming {
                     inlineNameField(field: .rename(session.id), placeholder: "Stack name")
                 } else {
                     Text(session.name)
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.system(size: 14, weight: session.isCurrent ? .semibold : .medium))
                         .lineLimit(1)
+                        .accessibilityLabel(session.isCurrent ? "\(session.name), current" : session.name)
                 }
 
                 Spacer(minLength: 8)
 
-                if session.isCurrent, !isRenaming {
-                    Text("Current")
-                        .font(.caption2.weight(.semibold))
-                        .textCase(.uppercase)
-                        .tracking(0.4)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(
-                            Capsule().fill(
-                                isHighlighted
-                                    ? Color.white.opacity(0.22)
-                                    : Color.accentColor.opacity(0.14))
-                        )
-                        .foregroundStyle(isHighlighted ? Color.white : Color.accentColor)
-                }
-
                 if position < 9, !isRenaming {
                     Text("⌘\(position + 1)")
-                        .font(.system(size: 10, weight: .medium, design: .rounded))
-                        .foregroundStyle(isHighlighted ? Color.white.opacity(0.7) : Color.secondary.opacity(0.5))
+                        .font(.system(size: 10.5, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                        .opacity(isHighlighted ? 1 : 0.7)
                 }
 
                 Text("\(session.annotationCount)")
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(isHighlighted ? Color.white.opacity(0.85) : Color.secondary)
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .foregroundStyle(session.annotationCount == 0 ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.secondary))
                     .frame(minWidth: 18, alignment: .trailing)
                     .accessibilityLabel(session.countLabel)
             }
         }
-        .foregroundStyle(isHighlighted ? Color.white : Color.primary)
+        .foregroundStyle(Color.primary)
         .frame(height: rowHeight)
     }
 
@@ -298,17 +284,16 @@ struct StackPaletteView: View {
             HStack(spacing: 10) {
                 Image(systemName: "plus")
                     .font(.system(size: 11, weight: .bold))
-                    .frame(width: 14)
-                    .foregroundStyle(isHighlighted ? Color.white : Color.accentColor)
+                    .frame(width: 10)
+                    .foregroundStyle(Color.accentColor)
                 (Text("Create ") + Text("“\(name)”").fontWeight(.semibold))
                     .font(.system(size: 14))
                     .lineLimit(1)
                 Spacer(minLength: 8)
-                Keycap("⌘↩")
-                    .opacity(isHighlighted ? 0 : 1)
+                Keycap(isHighlighted ? "↩" : "⌘↩")
             }
         }
-        .foregroundStyle(isHighlighted ? Color.white : Color.primary)
+        .foregroundStyle(Color.primary)
         .frame(height: rowHeight)
     }
 
@@ -316,7 +301,7 @@ struct StackPaletteView: View {
         HStack(spacing: 10) {
             Image(systemName: "plus")
                 .font(.system(size: 11, weight: .bold))
-                .frame(width: 14)
+                .frame(width: 10)
                 .foregroundStyle(Color.accentColor)
             inlineNameField(field: .create, placeholder: "New stack name")
             Spacer(minLength: 8)
@@ -430,7 +415,10 @@ struct StackPaletteView: View {
         } else {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(spacing: 10) {
+                    // A plain stack: stacks hold a handful of notes, and
+                    // scrollTo inside a lazy stack of variable-height text
+                    // can spin the layout engine.
+                    VStack(spacing: 2) {
                         ForEach(Array(listing.entries.enumerated()), id: \.element.id) { index, entry in
                             let position = session.entries.firstIndex(where: { $0.id == entry.id }) ?? index
                             NoteCard(
@@ -439,6 +427,7 @@ struct StackPaletteView: View {
                                 isHighlighted: interactive && model.highlightedNoteID == entry.id,
                                 isEditing: interactive && model.inlineEdit?.noteID == entry.id,
                                 interactive: interactive,
+                                isLast: index == listing.entries.count - 1,
                                 draft: Binding(
                                     get: {
                                         model.inlineEdit?.noteID == entry.id ? model.inlineText : entry.note
@@ -447,19 +436,18 @@ struct StackPaletteView: View {
                                 ),
                                 focus: $focus,
                                 onSelect: { model.chooseNote(entry.id) },
+                                onEdit: { model.beginEditingNote(entry.id) },
                                 onDelete: { model.perform(.deleteNote(entry.id)) }
                             )
                             .id(entry.id)
                         }
                     }
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 12)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
                 }
                 .onChange(of: model.highlightedNoteID) {
                     guard let id = model.highlightedNoteID else { return }
-                    withAnimation(.easeOut(duration: 0.12)) {
-                        proxy.scrollTo(id, anchor: nil)
-                    }
+                    proxy.scrollTo(id, anchor: nil)
                 }
                 .onAppear {
                     if let id = model.highlightedNoteID { proxy.scrollTo(id, anchor: .top) }
@@ -646,15 +634,14 @@ struct StackPaletteView: View {
                             if let subtitle = item.subtitle {
                                 Text(subtitle)
                                     .font(.system(size: 11))
-                                    .foregroundStyle(isHighlighted ? Color.white.opacity(0.75) : Color.secondary)
+                                    .foregroundStyle(.secondary)
                                     .lineLimit(1)
                             }
                         }
                         Spacer(minLength: 8)
                         Keycap(item.keys)
                     }
-                    .foregroundStyle(
-                        isHighlighted ? Color.white : item.isDestructive ? Color.red : Color.primary)
+                    .foregroundStyle(item.isDestructive ? Color.red : Color.primary)
                 }
             }
         }
@@ -679,6 +666,7 @@ struct StackPaletteView: View {
                         Image(systemName: "checkmark")
                             .font(.system(size: 10, weight: .bold))
                             .frame(width: 12)
+                            .foregroundStyle(Color.accentColor)
                             .opacity(isActive ? 1 : 0)
                         Text(profile.name)
                             .font(.system(size: 13, weight: .medium))
@@ -687,10 +675,10 @@ struct StackPaletteView: View {
                         if profile.clearSessionAfterExport {
                             Text("clears after copy")
                                 .font(.system(size: 10))
-                                .foregroundStyle(isHighlighted ? Color.white.opacity(0.75) : Color.secondary)
+                                .foregroundStyle(.secondary)
                         }
                     }
-                    .foregroundStyle(isHighlighted ? Color.white : Color.primary)
+                    .foregroundStyle(Color.primary)
                 }
             }
         }
@@ -699,8 +687,39 @@ struct StackPaletteView: View {
 
 // MARK: - Pieces
 
-/// A palette row: flat by default, accent-filled when highlighted. One click
-/// highlights it, a second click on the same row runs it.
+/// The palette's whole color story: state is a translucent wash of the
+/// system accent, and captured passages get the one warm color. Everything
+/// else is a grey drawn with opacity so it reads the same over any material
+/// and in either appearance.
+private enum PaletteTint {
+    /// Highlighted row or menu item.
+    static let selection = Color.accentColor.opacity(0.15)
+    /// Highlighted note: a neutral lift, so a tall block of text is not
+    /// swimming in blue.
+    static let noteSelection = Color.primary.opacity(0.07)
+    /// Pointer resting on a row.
+    static let hover = Color.primary.opacity(0.045)
+    /// Ring around the note being edited.
+    static let editing = Color.accentColor.opacity(0.75)
+    /// Small tinted badges (note numbers).
+    static let badge = Color.accentColor.opacity(0.12)
+
+    /// Highlighter ink over a captured passage. In the dark the ink stays
+    /// faint and the text itself warms up, since amber over near-black only
+    /// ever reads as mud.
+    static func marker(_ scheme: ColorScheme) -> Color {
+        scheme == .dark
+            ? Color(red: 1.0, green: 0.76, blue: 0.28).opacity(0.16)
+            : Color(red: 0.98, green: 0.78, blue: 0.22).opacity(0.36)
+    }
+
+    static func markedText(_ scheme: ColorScheme) -> Color {
+        scheme == .dark ? Color(red: 1.0, green: 0.90, blue: 0.68) : Color.primary.opacity(0.85)
+    }
+}
+
+/// A palette row: flat by default, washed with the accent when highlighted.
+/// One click highlights it, a second click on the same row runs it.
 private struct PaletteRow<Content: View>: View {
     let isHighlighted: Bool
     let onSelect: () -> Void
@@ -715,11 +734,8 @@ private struct PaletteRow<Content: View>: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contentShape(Rectangle())
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(
-                        isHighlighted
-                            ? Color.accentColor
-                            : Color.primary.opacity(hovering ? 0.05 : 0))
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(isHighlighted ? PaletteTint.selection : hovering ? PaletteTint.hover : Color.clear)
             )
             .onHover { hovering = $0 }
             .onTapGesture(count: 2) { onActivate() }
@@ -735,9 +751,11 @@ private struct NoteCard: View {
     let isHighlighted: Bool
     let isEditing: Bool
     let interactive: Bool
+    let isLast: Bool
     @Binding var draft: String
     var focus: FocusState<StackPaletteModel.Field?>.Binding
     let onSelect: () -> Void
+    let onEdit: () -> Void
     let onDelete: () -> Void
 
     @State private var hovering = false
@@ -748,14 +766,16 @@ private struct NoteCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Text("\(index + 1)")
-                    .font(.system(size: 11, weight: .bold, design: .rounded).monospacedDigit())
-                    .foregroundStyle(isHighlighted ? Color.white : Color.accentColor)
-                    .frame(minWidth: 20, minHeight: 20)
+                    .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(minWidth: 20, minHeight: 18)
                     .background(
-                        Circle().fill(isHighlighted ? Color.accentColor : Color.accentColor.opacity(0.12)))
+                        RoundedRectangle(cornerRadius: 5, style: .continuous).fill(PaletteTint.badge))
+
+                AppIcon(application: entry.provenance.application)
 
                 Text(entry.provenance.application.name)
                     .font(.caption.weight(.semibold))
@@ -788,7 +808,7 @@ private struct NoteCard: View {
                             .font(.system(size: 9, weight: .bold))
                             .foregroundStyle(.secondary)
                             .frame(width: 18, height: 18)
-                            .background(Circle().fill(Color.primary.opacity(0.07)))
+                            .background(Circle().fill(PaletteTint.hover))
                     }
                     .buttonStyle(.plain)
                     .help("Delete note (⌘⌫)")
@@ -801,7 +821,10 @@ private struct NoteCard: View {
                 HighlightedPassage(text: quote)
             }
 
-            if interactive {
+            // Only the note being edited is a text field. Every other note is
+            // plain text, so ↑↓ never re-measures a column of editors; ↩ or
+            // a click on the text swaps the editor in.
+            if isEditing {
                 TextField(
                     quote.isEmpty ? "Write a thought…" : "Add a note about this passage…",
                     text: $draft,
@@ -818,26 +841,37 @@ private struct NoteCard: View {
                     .lineSpacing(2)
                     .lineLimit(8)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture { if interactive { onEdit() } }
             } else {
-                Text("No note")
+                Text(interactive ? "Add a note…" : "No note")
                     .font(.body)
                     .foregroundStyle(.quaternary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture { if interactive { onEdit() } }
             }
         }
-        .padding(14)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 16)
+        // Notes sit on one continuous surface separated by hairlines; the
+        // highlighted one simply lifts to a soft grey.
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor))
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(isHighlighted ? PaletteTint.noteSelection : hovering && interactive ? PaletteTint.hover : Color.clear)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(
-                    isEditing
-                        ? Color.accentColor.opacity(0.9)
-                        : isHighlighted ? Color.accentColor.opacity(0.6) : Color.primary.opacity(0.08),
-                    lineWidth: isHighlighted || isEditing ? 1.5 : 1
-                )
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(PaletteTint.editing, lineWidth: 1)
+                .opacity(isEditing ? 1 : 0)
         )
+        .overlay(alignment: .bottom) {
+            if !isLast {
+                Divider()
+                    .padding(.horizontal, 18)
+                    .opacity(isHighlighted ? 0 : 1)
+            }
+        }
         .contentShape(Rectangle())
         .onTapGesture { if interactive { onSelect() } }
         .onHover { hovering = $0 }
@@ -858,17 +892,55 @@ private struct HighlightedPassage: View {
             .font(.callout)
             .lineSpacing(5)
             .lineLimit(6)
-            .foregroundStyle(.primary.opacity(0.85))
+            .foregroundStyle(PaletteTint.markedText(colorScheme))
             .frame(maxWidth: .infinity, alignment: .leading)
             .textSelection(.enabled)
     }
 
     private var marked: AttributedString {
         var attributed = AttributedString(text)
-        attributed.backgroundColor = colorScheme == .dark
-            ? Color(red: 1.0, green: 0.80, blue: 0.25).opacity(0.28)
-            : Color(red: 1.0, green: 0.86, blue: 0.30).opacity(0.5)
+        attributed.backgroundColor = PaletteTint.marker(colorScheme)
         return attributed
+    }
+}
+
+/// The icon of the app a note came from, looked up once per bundle and
+/// cached. Apps we cannot find get a neutral glyph rather than nothing, so
+/// the provenance row keeps its shape.
+private struct AppIcon: View {
+    let application: ApplicationIdentity
+
+    /// Misses are cached too, so an uninstalled app costs one lookup, not one
+    /// per render.
+    @MainActor private static var cache: [String: NSImage?] = [:]
+
+    var body: some View {
+        Group {
+            if let image = Self.icon(for: application) {
+                Image(nsImage: image)
+                    .resizable()
+                    .interpolation(.high)
+            } else {
+                Image(systemName: "app.dashed")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .frame(width: 16, height: 16)
+        .accessibilityHidden(true)
+    }
+
+    @MainActor
+    private static func icon(for application: ApplicationIdentity) -> NSImage? {
+        guard let bundleID = application.bundleID?.nonblank else { return nil }
+        if let cached = cache[bundleID] { return cached }
+        let image = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID).map {
+            let icon = NSWorkspace.shared.icon(forFile: $0.path)
+            icon.size = NSSize(width: 16, height: 16)
+            return icon
+        }
+        cache[bundleID] = image
+        return image
     }
 }
 
@@ -888,22 +960,22 @@ private struct OverlayPanel<Rows: View>: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 14)
-                .padding(.top, 10)
+                .padding(.horizontal, 18)
+                .padding(.top, 12)
                 .padding(.bottom, 4)
             ScrollView {
-                VStack(spacing: 1) {
+                VStack(spacing: 2) {
                     rows()
                     if isEmpty {
                         Text(emptyText)
                             .font(.callout)
                             .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, minHeight: 36)
+                            .frame(maxWidth: .infinity, minHeight: 40)
                     }
                 }
-                .padding(6)
+                .padding(8)
             }
-            .frame(maxHeight: 320)
+            .frame(maxHeight: 380)
             .fixedSize(horizontal: false, vertical: true)
             Divider()
             HStack(spacing: 8) {
@@ -916,10 +988,10 @@ private struct OverlayPanel<Rows: View>: View {
                     .focused(focus, equals: .overlay)
                 Keycap("esc")
             }
-            .padding(.horizontal, 12)
-            .frame(height: 36)
+            .padding(.horizontal, 14)
+            .frame(height: 40)
         }
-        .frame(width: 360)
+        .frame(width: 380)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(.thickMaterial)
@@ -941,14 +1013,15 @@ private struct OverlayRow<Content: View>: View {
     var body: some View {
         Button(action: action) {
             content()
-                .padding(.horizontal, 10)
-                .frame(maxWidth: .infinity, minHeight: 34)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, minHeight: 40)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .background(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(isHighlighted ? Color.accentColor : Color.clear)
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(isHighlighted ? PaletteTint.selection : Color.clear)
         )
         .onHover { if $0 { onHover() } }
     }
