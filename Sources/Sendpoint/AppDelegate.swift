@@ -6,13 +6,12 @@ import SwiftUI
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
-    private var stackWindow: NSWindow?
     private var settingsWindow: NSWindow?
     private var setupWindowController: SetupWindowController?
     private var accessibilityHelperWindowController: PermissionHelperWindowController?
     private var inputMonitoringHelperWindowController: PermissionHelperWindowController?
     private var profileEditor: ProfileEditorState?
-    private var quickSwitch: QuickSwitchWindowController?
+    private var palette: StackPaletteWindowController?
     private enum StoreState {
         case loading
         case available(AnnotationStore)
@@ -177,7 +176,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menuMutationTask = nil
         pasteTask?.cancel()
         pasteTask = nil
-        quickSwitch?.close()
+        palette?.close()
         setupWindowController?.teardown()
         setupWindowController = nil
         accessibilityHelperWindowController?.teardown()
@@ -187,9 +186,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsWindow?.delegate = nil
         settingsWindow?.close()
         settingsWindow = nil
-        stackWindow?.delegate = nil
-        stackWindow?.close()
-        stackWindow = nil
         voiceShortcutMonitor.teardown()
         captureController.teardown()
         permissionState.teardown()
@@ -593,7 +589,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let targetProcessIdentifier = target?.processIdentifier ?? 0
         Diag.log("copyMarkdown invoked, count=\(count) paste=\(settings.pasteDirectly) front=\(targetName)")
         let clearsAfterExport = settings.activeProfile.clearSessionAfterExport
-        guard CurrentSessionExport.copy(store: store, settings: settings) else {
+        guard SessionExport.copy(store: store, settings: settings) else {
             NSSound.beep()
             return
         }
@@ -759,71 +755,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Opens the palette inside the current stack: its notes, full width.
     @objc private func showStack() {
         guard let store else { NSSound.beep(); return }
-        if let stackWindow {
-            NSApp.activate(ignoringOtherApps: true)
-            stackWindow.makeKeyAndOrderFront(nil)
-            return
-        }
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 680, height: 460),
-            styleMask: [.titled, .closable, .resizable, .miniaturizable],
-            backing: .buffered,
-            defer: false
-        )
-        window.title = "Stack"
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
-        window.styleMask.insert(.fullSizeContentView)
-        // An empty unified toolbar makes the title bar as tall as the header,
-        // so the traffic lights centre on the same line as its controls.
-        let toolbar = NSToolbar(identifier: "StackWindowToolbar")
-        toolbar.showsBaselineSeparator = false
-        window.toolbar = toolbar
-        window.toolbarStyle = .unified
-        window.isMovableByWindowBackground = false
-        window.isReleasedWhenClosed = false
-        let hosting = NSHostingView(rootView: StackView(
-            store: store,
-            settings: settings,
-            onSelectProfile: { [weak self] profileID in
-                self?.requestProfileSelection(profileID)
-            }
-        ))
-        window.contentView = hosting
-        let fittingSize = hosting.fittingSize
-        window.setContentSize(NSSize(
-            width: max(680, fittingSize.width),
-            height: max(460, fittingSize.height)
-        ))
-        window.center()
-        window.delegate = self
-        stackWindow = window
-        NSApp.activate(ignoringOtherApps: true)
-        window.makeKeyAndOrderFront(nil)
+        presentPalette(at: .notes(store.currentSessionID))
     }
 
+    /// Opens the palette at the list of every stack.
     @objc private func showQuickSwitcher() {
+        guard store != nil else { NSSound.beep(); return }
+        presentPalette(at: .stacks)
+    }
+
+    private func presentPalette(at level: PaletteLevel) {
         guard let store else { NSSound.beep(); return }
-        if quickSwitch == nil {
-            quickSwitch = QuickSwitchWindowController(
+        if palette == nil {
+            palette = StackPaletteWindowController(
                 store: store,
+                settings: settings,
                 onSwitch: { [weak self] sessionID in
-                    self?.switchFromQuickSwitcher(to: sessionID)
+                    self?.switchFromPalette(to: sessionID)
                 },
-                onDismiss: { [weak self] in self?.quickSwitch = nil }
+                onSelectProfile: { [weak self] profileID in
+                    self?.requestProfileSelection(profileID)
+                },
+                onDismiss: { [weak self] in self?.palette = nil }
             )
         }
-        quickSwitch?.show()
+        palette?.show(at: level)
     }
 
-    private func switchFromQuickSwitcher(to sessionID: UUID) {
+    private func switchFromPalette(to sessionID: UUID) {
         enqueueMenuMutation(
             .switchSession(sessionID: sessionID),
             presentsError: true
         )
-        quickSwitch?.close()
+        palette?.close()
     }
 
     private func presentPermissionHelpForCapture() {
@@ -940,13 +907,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Tuck away auxiliary windows so a capture shows the note box alone.
     private func hideAuxiliaryWindows() {
-        Diag.log("hideAuxiliaryWindows stack=\(stackWindow?.isVisible ?? false) settings=\(settingsWindow?.isVisible ?? false) quickSwitch=\(quickSwitch != nil)")
-        stackWindow?.orderOut(nil)
+        Diag.log("hideAuxiliaryWindows palette=\(palette != nil) settings=\(settingsWindow?.isVisible ?? false)")
         settingsWindow?.orderOut(nil)
         setupWindowController?.close()
         accessibilityHelperWindowController?.close()
         inputMonitoringHelperWindowController?.close()
-        quickSwitch?.close()
+        palette?.close()
     }
 
     @objc private func quit() {
@@ -971,7 +937,6 @@ extension AppDelegate: NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
-        if window === stackWindow { stackWindow = nil }
         if window === settingsWindow {
             settingsWindow = nil
             profileEditor = nil

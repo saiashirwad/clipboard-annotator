@@ -42,7 +42,7 @@ enum AnnotationMoveMapping {
 }
 
 @MainActor
-enum CurrentSessionExport {
+enum SessionExport {
     static func markdown(store: AnnotationStore, settings: AppSettings) -> String {
         PromptComposer.markdown(
             session: store.currentSession,
@@ -50,7 +50,8 @@ enum CurrentSessionExport {
         )
     }
 
-    /// The clear is conditional on the pasteboard accepting the Markdown.
+    /// Copies the current stack. The clear is conditional on the pasteboard
+    /// accepting the Markdown.
     static func copy(
         store: AnnotationStore,
         settings: AppSettings,
@@ -58,6 +59,7 @@ enum CurrentSessionExport {
     ) -> Bool {
         copy(
             store: store,
+            sessionID: store.currentSessionID,
             profile: settings.activeProfile,
             write: write
         )
@@ -68,9 +70,20 @@ enum CurrentSessionExport {
         profile: Profile,
         write: @MainActor (String) -> Bool
     ) -> Bool {
-        guard !store.currentEntries.isEmpty else { return false }
-        let sessionID = store.currentSessionID
-        let markdown = PromptComposer.markdown(session: store.currentSession, profile: profile)
+        copy(store: store, sessionID: store.currentSessionID, profile: profile, write: write)
+    }
+
+    /// Copies any stack, current or not, shaped by `profile`.
+    static func copy(
+        store: AnnotationStore,
+        sessionID: UUID,
+        profile: Profile,
+        write: @MainActor (String) -> Bool = writeToGeneralPasteboard
+    ) -> Bool {
+        guard let session = store.sessions.first(where: { $0.id == sessionID }),
+              !session.entries.isEmpty
+        else { return false }
+        let markdown = PromptComposer.markdown(session: session, profile: profile)
         guard write(markdown) else { return false }
         if profile.clearSessionAfterExport {
             store.mutate(.clearSession(sessionID: sessionID))

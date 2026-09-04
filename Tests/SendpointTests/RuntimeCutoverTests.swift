@@ -107,7 +107,7 @@ final class RuntimeCutoverTests: XCTestCase {
         var profile = Profile.plain
         profile.clearSessionAfterExport = true
 
-        let copied = CurrentSessionExport.copy(store: store, profile: profile) { text in
+        let copied = SessionExport.copy(store: store, profile: profile) { text in
             attemptedText = text
             return false
         }
@@ -151,7 +151,7 @@ final class RuntimeCutoverTests: XCTestCase {
         let store = try await AnnotationStore(persistence: persistence, defaultSession: session)
         var written = ""
 
-        let copied = CurrentSessionExport.copy(store: store, settings: settings) { markdown in
+        let copied = SessionExport.copy(store: store, settings: settings) { markdown in
             written = markdown
             return true
         }
