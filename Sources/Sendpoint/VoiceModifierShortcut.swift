@@ -3,6 +3,7 @@ import Foundation
 
 enum VoiceModifierShortcut {
     static let displayString = "⌥⌘"
+    static let armingDelay: Duration = .milliseconds(150)
 
     private static let requiredFlags: CGEventFlags = [.maskAlternate, .maskCommand]
     private static let relevantFlags: CGEventFlags = [
@@ -13,6 +14,14 @@ enum VoiceModifierShortcut {
         flags.intersection(relevantFlags) == requiredFlags
     }
 
+    static func hasDisqualifyingModifier(flags: CGEventFlags) -> Bool {
+        !flags.intersection(relevantFlags).subtracting(requiredFlags).isEmpty
+    }
+
+    static func hasNoModifiers(flags: CGEventFlags) -> Bool {
+        flags.intersection(relevantFlags).isEmpty
+    }
+
     /// A key-based shortcut with these modifiers would start voice capture
     /// before its key was pressed, so keep that prefix for voice alone.
     static func conflicts(with combo: KeyCombo) -> Bool {
@@ -20,31 +29,100 @@ enum VoiceModifierShortcut {
     }
 }
 
-enum VoiceModifierShortcutEdge: Equatable {
-    case pressed
-    case released
+enum VoiceModifierShortcutAction: Equatable {
+    case startArming
+    case cancelArming
+    case pressed(at: TimeInterval)
+    case released(at: TimeInterval)
+    case tapped(pressedAt: TimeInterval, releasedAt: TimeInterval)
+    case interrupted
 }
 
 struct VoiceModifierShortcutState {
-    private(set) var isPressed = false
+    private enum Phase: Equatable {
+        case idle
+        case arming(pressedAt: TimeInterval)
+        case active
+        case suppressed
+    }
 
-    mutating func update(isPressed nextValue: Bool) -> VoiceModifierShortcutEdge? {
-        guard nextValue != isPressed else { return nil }
-        isPressed = nextValue
-        return nextValue ? .pressed : .released
+    private var phase: Phase = .idle
+
+    mutating func flagsChanged(
+        flags: CGEventFlags,
+        timestamp: TimeInterval
+    ) -> VoiceModifierShortcutAction? {
+        let isPressed = VoiceModifierShortcut.isPressed(flags: flags)
+        let isClear = VoiceModifierShortcut.hasNoModifiers(flags: flags)
+
+        switch phase {
+        case .idle:
+            guard isPressed else {
+                if VoiceModifierShortcut.hasDisqualifyingModifier(flags: flags) {
+                    phase = .suppressed
+                }
+                return nil
+            }
+            phase = .arming(pressedAt: timestamp)
+            return .startArming
+
+        case let .arming(pressedAt):
+            guard !isPressed else { return nil }
+            if VoiceModifierShortcut.hasDisqualifyingModifier(flags: flags) {
+                phase = .suppressed
+                return .cancelArming
+            }
+            phase = isClear ? .idle : .suppressed
+            return .tapped(pressedAt: pressedAt, releasedAt: timestamp)
+
+        case .active:
+            guard !isPressed else { return nil }
+            phase = isClear ? .idle : .suppressed
+            if VoiceModifierShortcut.hasDisqualifyingModifier(flags: flags) {
+                return .interrupted
+            }
+            return .released(at: timestamp)
+
+        case .suppressed:
+            if isClear {
+                phase = .idle
+            }
+            return nil
+        }
+    }
+
+    mutating func keyDown() -> VoiceModifierShortcutAction? {
+        switch phase {
+        case .arming:
+            phase = .suppressed
+            return .cancelArming
+        case .active:
+            phase = .suppressed
+            return .interrupted
+        case .idle, .suppressed:
+            return nil
+        }
+    }
+
+    mutating func armingDelayElapsed() -> VoiceModifierShortcutAction? {
+        guard case let .arming(pressedAt) = phase else { return nil }
+        phase = .active
+        return .pressed(at: pressedAt)
     }
 
     @discardableResult
     mutating func reset() -> Bool {
-        let wasPressed = isPressed
-        isPressed = false
-        return wasPressed
+        let wasActive = phase == .active
+        phase = .idle
+        return wasActive
     }
 }
 
 /// Watches the fixed modifier-only voice shortcut system-wide. Carbon hotkeys
 /// need a non-modifier key, so this uses the same passive event-tap approach as
-/// Hex. The tap observes flags; it does not block or change keyboard input.
+/// Hex. The tap observes flags and key-down events; it does not block or change
+/// keyboard input. A short arming delay rejects Hyper-key transitions and
+/// ordinary Option-Command shortcuts before voice capture starts.
 @MainActor
 final class VoiceModifierShortcutMonitor {
     private enum Lifecycle {
@@ -61,6 +139,7 @@ final class VoiceModifierShortcutMonitor {
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var state = VoiceModifierShortcutState()
+    private var armingTask: Task<Void, Never>?
 
     @discardableResult
     func start() -> Bool {
@@ -68,7 +147,8 @@ final class VoiceModifierShortcutMonitor {
         if lifecycle == .running { return true }
         guard CGPreflightListenEventAccess() else { return false }
 
-        let mask = CGEventMask(1) << CGEventType.flagsChanged.rawValue
+        let mask = (CGEventMask(1) << CGEventType.flagsChanged.rawValue)
+            | (CGEventMask(1) << CGEventType.keyDown.rawValue)
         guard let tap = CGEvent.tapCreate(
             tap: .cgAnnotatedSessionEventTap,
             place: .headInsertEventTap,
@@ -107,20 +187,49 @@ final class VoiceModifierShortcutMonitor {
     }
 
     fileprivate func receive(flags: CGEventFlags, timestamp: TimeInterval) {
-        guard lifecycle == .running,
-              let edge = state.update(isPressed: VoiceModifierShortcut.isPressed(flags: flags))
-        else { return }
+        guard lifecycle == .running else { return }
+        perform(state.flagsChanged(flags: flags, timestamp: timestamp))
+    }
 
-        switch edge {
-        case .pressed:
+    fileprivate func receiveKeyDown() {
+        guard lifecycle == .running else { return }
+        perform(state.keyDown())
+    }
+
+    private func perform(_ action: VoiceModifierShortcutAction?) {
+        guard let action else { return }
+        switch action {
+        case .startArming:
+            armingTask?.cancel()
+            armingTask = Task { [weak self] in
+                do {
+                    try await Task.sleep(for: VoiceModifierShortcut.armingDelay)
+                } catch {
+                    return
+                }
+                guard !Task.isCancelled, let self else { return }
+                self.armingTask = nil
+                self.perform(self.state.armingDelayElapsed())
+            }
+        case .cancelArming:
+            cancelArming()
+        case let .pressed(timestamp):
             onPressed?(timestamp)
-        case .released:
+        case let .released(timestamp):
             onReleased?(timestamp)
+        case let .tapped(pressedAt, releasedAt):
+            cancelArming()
+            onPressed?(pressedAt)
+            onReleased?(releasedAt)
+        case .interrupted:
+            cancelArming()
+            onInterrupted?()
         }
     }
 
     fileprivate func recoverFromDisabledTap() {
         guard lifecycle == .running, let eventTap else { return }
+        cancelArming()
         if state.reset() {
             onInterrupted?()
         }
@@ -129,6 +238,7 @@ final class VoiceModifierShortcutMonitor {
 
     private func stop(notifyInterruption: Bool) {
         guard lifecycle == .running else { return }
+        cancelArming()
         if state.reset(), notifyInterruption {
             onInterrupted?()
         }
@@ -144,6 +254,11 @@ final class VoiceModifierShortcutMonitor {
         runLoopSource = nil
         eventTap = nil
         lifecycle = .stopped
+    }
+
+    private func cancelArming() {
+        armingTask?.cancel()
+        armingTask = nil
     }
 }
 
@@ -165,6 +280,8 @@ private func voiceModifierShortcutCallback(
                 flags: event.flags,
                 timestamp: TimeInterval(event.timestamp) / 1_000_000_000
             )
+        case .keyDown:
+            monitor.receiveKeyDown()
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
             monitor.recoverFromDisabledTap()
         default:

@@ -59,6 +59,8 @@ control it. Allowing it lets notes record the tab's title and URL.
 | `⌃⌘⌫`    | Clear the current session                                         |
 | `⌘Z`     | Undo the last clear in the stack window                           |
 
-The voice shortcut is fixed at `⌥⌘`. The five key-based global shortcuts are
+The voice shortcut is fixed at `⌥⌘`. It waits briefly before recording so Hyper
+keys and key-based `⌥⌘` shortcuts pass through without starting voice capture.
+The five key-based global shortcuts are
 rebindable in Settings. The typed note save and discard keys belong to the note
 box; `⌘Z` belongs to the stack window.

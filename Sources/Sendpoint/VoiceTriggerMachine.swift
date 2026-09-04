@@ -5,7 +5,7 @@ enum VoiceTriggerSource: Equatable, Sendable {
     case hotKey
 }
 
-/// Events delivered by the Carbon voice shortcut and its capture owner.
+/// Events delivered by the modifier-only voice shortcut and its capture owner.
 enum VoiceTriggerEvent: Equatable, Sendable {
     case hotKeyPressed(at: TimeInterval)
     case hotKeyReleased(at: TimeInterval)
@@ -38,7 +38,7 @@ enum VoiceTriggerTiming {
     static let tapHoldThreshold: TimeInterval = 0.35
 }
 
-/// Pure state machine for Option+Space voice capture.
+/// Pure state machine for Option-Command voice capture.
 ///
 /// Timestamps come from a monotonic clock supplied by the caller. A release
 /// earlier than its press is stale and is ignored. Once a gesture has acted,
